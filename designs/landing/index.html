@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Дизайнер Светлана — Портфолио</title>
+  <style>
+    /* ========================================
+       CSS VARIABLES — ТЕМЫ
+       v1.0 — 2026-07-08 — Создание лендинга
+    ======================================== */
+    :root {
+      /* Светлая тема */
+      --bg-primary: #ffffff;
+      --bg-secondary: #f5f5f5;
+      --bg-card: #ffffff;
+      --text-primary: #1a1a1a;
+      --text-secondary: #666666;
+      --text-muted: #999999;
+      --border-color: #e5e5e5;
+      --accent: #4a4a4a;
+      --accent-hover: #333333;
+      --shadow: rgba(0, 0, 0, 0.08);
+      --overlay: rgba(255, 255, 255, 0.9);
+      --chat-bg: #ffffff;
+      --chat-text: #1a1a1a;
+      --chat-user-bg: #f0f0f0;
+    }
+
+    [data-theme="dark"] {
+      /* Темная тема */
+      --bg-primary: #0a0a0a;
+      --bg-secondary: #141414;
+      --bg-card: #1a1a1a;
+      --text-primary: #f5f5f5;
+      --text-secondary: #a0a0a0;
+      --text-muted: #666666;
+      --border-color: #2a2a2a;
+      --accent: #b0b0b0;
+      --accent-hover: #d0d0d0;
+      --shadow: rgba(0, 0, 0, 0.3);
+      --overlay: rgba(10, 10, 10, 0.9);
+      --chat-bg: #1a1a1a;
+      --chat-text: #f5f5f5;
+      --chat-user-bg: #2a2a2a;
+    }
+
+    /* ========================================
+       RESET & BASE
+    ======================================== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    a {
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: color 0.3s;
+    }
+
+    a:hover {
+      color: var(--accent);
+    }
+
+    img {
+      max-width: 100%;
+      display: block;
+    }
+
+    /* ========================================
+       HEADER
+       v1.0 — 2026-07-08
+    ======================================== */
+    .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--border-color);
+      z-index: 100;
+      transition: background-color 0.3s, border-color 0.3s;
+    }
+
+    .header__container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header__logo {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .header__nav {
+      display: none;
+      gap: 2rem;
+    }
+
+    @media (min-width: 768px) {
+      .header__nav {
+        display: flex;
+      }
+    }
+
+    .header__nav a {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    .header__nav a:hover {
+      color: var(--text-primary);
+    }
+
+    .header__actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+    }
+
+    .btn--ghost {
+      background: transparent;
+      color: var(--text-primary);
+    }
+
+    .btn--ghost:hover {
+      background: var(--bg-secondary);
+    }
+
+    .btn--primary {
+      background: var(--text-primary);
+      color: var(--bg-primary);
+    }
+
+    .btn--primary:hover {
+      opacity: 0.85;
+    }
+
+    .theme-toggle {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+    }
+
+    .theme-toggle:hover {
+      background: var(--border-color);
+    }
+
+    .theme-toggle svg {
+      width: 18px;
+      height: 18px;
+      fill: var(--text-primary);
+    }
+
+    .icon-sun, .icon-moon {
+      display: none;
+    }
+
+    [data-theme="light"] .icon-moon {
+      display: block;
+    }
+
+    [data-theme="dark"] .icon-sun {
+      display: block;
+    }
+
+    /* Mobile menu button */
+    .mobile-menu-btn {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+    }
+
+    @media (min-width: 768px) {
+      .mobile-menu-btn {
+        display: none;
+      }
+    }
+
+    .mobile-menu-btn span {
+      width: 20px;
+      height: 2px;
+      background: var(--text-primary);
+      border-radius: 1px;
+    }
+
+    /* ========================================
+       HERO / CAROUSEL
+       v1.0 — 2026-07-08
+    ======================================== */
+    .hero {
+      padding: 8rem 1.5rem 4rem;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    @media (min-width: 768px) {
+      .hero {
+        padding: 7rem 2rem 4rem;
+      }
+    }
+
+    .carousel {
+      max-width: 1200px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .carousel__track {
+      display: flex;
+      gap: 1.5rem;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scrollbar-width: none;
+      padding-bottom: 1rem;
+    }
+
+    .carousel__track::-webkit-scrollbar {
+      display: none;
+    }
+
+    .carousel__slide {
+      flex: 0 0 85%;
+      scroll-snap-align: start;
+      aspect-ratio: 4/3;
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    @media (min-width: 768px) {
+      .carousel__slide {
+        flex: 0 0 60%;
+      }
+    }
+
+    @media (min-width: 1024px) {
+      .carousel__slide {
+        flex: 0 0 45%;
+      }
+    }
+
+    .carousel__slide img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .carousel__slide--tall {
+      aspect-ratio: 3/4;
+    }
+
+    @media (min-width: 768px) {
+      .carousel__slide--tall {
+        aspect-ratio: 2/3;
+        flex: 0 0 35%;
+      }
+    }
+
+    .carousel__slide--wide {
+      aspect-ratio: 16/9;
+    }
+
+    .carousel__controls {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .carousel__dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border-color);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .carousel__dot--active {
+      background: var(--text-primary);
+      width: 24px;
+      border-radius: 4px;
+    }
+
+    /* ========================================
+       FOOTER
+       v1.0 — 2026-07-08
+    ======================================== */
+    .footer {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-color);
+      padding: 3rem 1.5rem;
+      margin-top: 4rem;
+    }
+
+    .footer__container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    @media (min-width: 768px) {
+      .footer__container {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-start;
+      }
+    }
+
+    .footer__brand {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .footer__logo {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+
+    .footer__copy {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .footer__links {
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .footer__link {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .footer__link:hover {
+      color: var(--text-primary);
+    }
+
+    .footer__link svg {
+      width: 20px;
+      height: 20px;
+      fill: currentColor;
+    }
+
+    /* ========================================
+       AI ASSISTANT BUBBLE
+       v1.0 — 2026-07-08
+    ======================================== */
+    .ai-bubble {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: var(--text-primary);
+      color: var(--bg-primary);
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 20px var(--shadow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s, box-shadow 0.2s;
+      z-index: 1000;
+    }
+
+    .ai-bubble:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 25px var(--shadow);
+    }
+
+    .ai-bubble svg {
+      width: 28px;
+      height: 28px;
+      fill: currentColor;
+    }
+
+    .ai-bubble__pulse {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: var(--text-primary);
+      opacity: 0.3;
+      animation: pulse 2s ease-out infinite;
+    }
+
+    @keyframes pulse {
+      0% {
+        transform: scale(1);
+        opacity: 0.3;
+      }
+      100% {
+        transform: scale(1.5);
+        opacity: 0;
+      }
+    }
+
+    /* Chat window (hidden by default) */
+    .chat-window {
+      position: fixed;
+      bottom: 5rem;
+      right: 1.5rem;
+      width: 350px;
+      max-width: calc(100vw - 3rem);
+      height: 500px;
+      max-height: calc(100vh - 8rem);
+      background: var(--chat-bg);
+      border-radius: 16px;
+      box-shadow: 0 10px 40px var(--shadow);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 999;
+      border: 1px solid var(--border-color);
+    }
+
+    .chat-window--open {
+      display: flex;
+    }
+
+    .chat-window__header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-window__title {
+      font-weight: 600;
+      font-size: 0.95rem;
+    }
+
+    .chat-window__close {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--bg-secondary);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-primary);
+    }
+
+    .chat-window__messages {
+      flex: 1;
+      padding: 1rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .chat-message {
+      max-width: 80%;
+      padding: 0.75rem 1rem;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .chat-message--ai {
+      background: var(--chat-user-bg);
+      color: var(--chat-text);
+      align-self: flex-start;
+      border-bottom-left-radius: 4px;
+    }
+
+    .chat-message--user {
+      background: var(--text-primary);
+      color: var(--bg-primary);
+      align-self: flex-end;
+      border-bottom-right-radius: 4px;
+    }
+
+    .chat-window__input {
+      padding: 1rem;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .chat-window__input input {
+      flex: 1;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      font-size: 0.9rem;
+    }
+
+    .chat-window__input input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .chat-window__input button {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      background: var(--text-primary);
+      color: var(--bg-primary);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .chat-window__input button:hover {
+      opacity: 0.85;
+    }
+
+    .chat-window__input button svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+  </style>
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header__container">
+      <a href="#" class="header__logo">Дизайнер Светлана</a>
+      
+      <nav class="header__nav">
+        <a href="#portfolio">Портфолио</a>
+        <a href="#about">Обо мне</a>
+        <a href="#services">Услуги</a>
+        <a href="#contacts">Контакты</a>
+      </nav>
+
+      <div class="header__actions">
+        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Переключить тему">
+          <svg class="icon-sun" viewBox="0 0 24 24"><path d="M12 7a5 5 0 100 10 5 5 0 000-10zM12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        </button>
+        
+        <button class="mobile-menu-btn" aria-label="Меню">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        
+        <button class="btn btn--primary">Войти</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO / CAROUSEL -->
+  <section class="hero">
+    <div class="carousel">
+      <div class="carousel__track">
+        <div class="carousel__slide carousel__slide--tall">
+          <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=600&h=900&fit=crop" alt="Дизайн интерьера 1">
+        </div>
+        <div class="carousel__slide">
+          <img src="https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?w=800&h=600&fit=crop" alt="Дизайн интерьера 2">
+        </div>
+        <div class="carousel__slide carousel__slide--wide">
+          <img src="https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?w=1000&h=562&fit=crop" alt="Дизайн интерьера 3">
+        </div>
+        <div class="carousel__slide">
+          <img src="https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&h=600&fit=crop" alt="Дизайн интерьера 4">
+        </div>
+        <div class="carousel__slide carousel__slide--tall">
+          <img src="https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?w=600&h=900&fit=crop" alt="Дизайн интерьера 5">
+        </div>
+      </div>
+      
+      <div class="carousel__controls">
+        <button class="carousel__dot carousel__dot--active" aria-label="Слайд 1"></button>
+        <button class="carousel__dot" aria-label="Слайд 2"></button>
+        <button class="carousel__dot" aria-label="Слайд 3"></button>
+        <button class="carousel__dot" aria-label="Слайд 4"></button>
+        <button class="carousel__dot" aria-label="Слайд 5"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="footer__container">
+      <div class="footer__brand">
+        <span class="footer__logo">Дизайнер Светлана</span>
+        <span class="footer__copy">© 2026 Все права защищены</span>
+      </div>
+
+      <div class="footer__links">
+        <a href="https://t.me/username" class="footer__link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z"/></svg>
+          Telegram
+        </a>
+        <a href="https://wa.me/79001234567" class="footer__link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          WhatsApp
+        </a>
+        <a href="https://vk.com/username" class="footer__link" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24"><path d="M15.684 0H8.316C1.592 0 0 1.592 0 8.316v7.368C0 22.408 1.592 24 8.316 24h7.368C22.408 24 24 22.408 24 15.684V8.316C24 1.592 22.408 0 15.684 0zm3.692 17.123h-1.744c-.66 0-.864-.525-2.05-1.727-1.033-1-1.49-1.135-1.744-1.135-.356 0-.458.102-.458.593v1.575c0 .424-.135.678-1.253.678-1.846 0-3.896-1.118-5.335-3.202C4.624 10.857 4 8.387 4 7.897c0-.254.102-.491.593-.491h1.744c.44 0 .61.203.78.677.847 2.471 2.267 4.64 2.852 4.64.22 0 .322-.102.322-.66V9.721c-.068-1.186-.695-1.287-.695-1.71 0-.204.17-.407.44-.407h2.744c.372 0 .508.203.508.643v3.473c0 .372.17.508.271.508.22 0 .407-.136.813-.542 1.254-1.406 2.148-3.574 2.148-3.574.119-.254.322-.491.763-.491h1.744c.525 0 .644.27.525.643-.22 1.017-2.354 4.031-2.354 4.031-.186.305-.254.44 0 .78.186.254.796.779 1.203 1.253.745.847 1.32 1.558 1.473 2.05.17.49-.085.744-.576.744z"/></svg>
+          VK
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- AI ASSISTANT BUBBLE -->
+  <button class="ai-bubble" onclick="toggleChat()" aria-label="AI Ассистент">
+    <span class="ai-bubble__pulse"></span>
+    <svg viewBox="0 0 24 24"><path d="M12 2a2 2 0 012 2c0 .74-.4 1.39-1 1.73V7h1a7 7 0 017 7h1a1 1 0 011 1v3a1 1 0 01-1 1h-1v1a2 2 0 01-2 2H5a2 2 0 01-2-2v-1H2a1 1 0 01-1-1v-3a1 1 0 011-1h1a7 7 0 017-7h1V5.73c-.6-.34-1-.99-1-1.73a2 2 0 012-2M7.5 13A2.5 2.5 0 005 15.5 2.5 2.5 0 007.5 18a2.5 2.5 0 002.5-2.5A2.5 2.5 0 007.5 13m9 0a2.5 2.5 0 00-2.5 2.5 2.5 2.5 0 002.5 2.5 2.5 2.5 0 002.5-2.5 2.5 2.5 0 00-2.5-2.5z"/></svg>
+  </button>
+
+  <!-- CHAT WINDOW -->
+  <div class="chat-window" id="chatWindow">
+    <div class="chat-window__header">
+      <span class="chat-window__title">AI Ассистент</span>
+      <button class="chat-window__close" onclick="toggleChat()">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 1l10 10M11 1L1 11"/>
+        </svg>
+      </button>
+    </div>
+    <div class="chat-window__messages">
+      <div class="chat-message chat-message--ai">
+        Привет! Я AI-ассистент. Задайте вопрос о дизайнере Светлане или её услугах.
+      </div>
+    </div>
+    <div class="chat-window__input">
+      <input type="text" placeholder="Введите сообщение..." id="chatInput">
+      <button onclick="sendMessage()">
+        <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Theme toggle
+    function toggleTheme() {
+      const html = document.documentElement;
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+    }
+
+    // Load saved theme
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
+    // Chat toggle
+    function toggleChat() {
+      const chat = document.getElementById('chatWindow');
+      chat.classList.toggle('chat-window--open');
+    }
+
+    // Send message
+    function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const message = input.value.trim();
+      if (!message) return;
+
+      const messagesContainer = document.querySelector('.chat-window__messages');
+      
+      // Add user message
+      const userMsg = document.createElement('div');
+      userMsg.className = 'chat-message chat-message--user';
+      userMsg.textContent = message;
+      messagesContainer.appendChild(userMsg);
+
+      input.value = '';
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+      // Simulate AI response
+      setTimeout(() => {
+        const aiMsg = document.createElement('div');
+        aiMsg.className = 'chat-message chat-message--ai';
+        aiMsg.textContent = 'Спасибо за сообщение! Скоро свяжусь с вами для обсуждения деталей.';
+        messagesContainer.appendChild(aiMsg);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+      }, 1000);
+    }
+
+    // Enter key for chat
+    document.getElementById('chatInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') sendMessage();
+    });
+
+    // Carousel functionality
+    const track = document.querySelector('.carousel__track');
+    const dots = document.querySelectorAll('.carousel__dot');
+
+    track.addEventListener('scroll', () => {
+      const scrollLeft = track.scrollLeft;
+      const slideWidth = track.offsetWidth;
+      const activeIndex = Math.round(scrollLeft / slideWidth);
+      
+      dots.forEach((dot, i) => {
+        dot.classList.toggle('carousel__dot--active', i === activeIndex);
+      });
+    });
+  </script>
+</body>
+</html>
