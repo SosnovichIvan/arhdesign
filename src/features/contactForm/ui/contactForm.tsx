@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
@@ -18,11 +18,22 @@ const contactFormSchema = z.object({
 
 type ContactFormData = z.infer<typeof contactFormSchema>;
 type Status = "idle" | "loading" | "success" | "failure" | "cooldown";
+type ContactFormProps = {
+  triggerClassName?: string;
+  triggerLabel?: string;
+  isOpen?: boolean;
+  onClose?: () => void;
+  showTrigger?: boolean;
+};
 
-export function ContactForm({ triggerClassName, triggerLabel = "Обсудить проект" }: { triggerClassName?: string; triggerLabel?: string }) {
-  const [isOpen, setIsOpen] = useState(false);
+const ContactDialogContext = createContext<(() => void) | null>(null);
+
+export function ContactForm({ triggerClassName, triggerLabel = "Обсудить проект", isOpen: controlledIsOpen, onClose, showTrigger = true }: ContactFormProps) {
+  const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [retryAfter, setRetryAfter] = useState(0);
+  const isControlled = controlledIsOpen !== undefined;
+  const isOpen = controlledIsOpen ?? uncontrolledIsOpen;
   const form = useForm<ContactFormData>({
     defaultValues: { name: "", contact: "", projectType: "", projectDetails: "", consent: false, website: "" },
     resolver: zodResolver(contactFormSchema),
@@ -42,9 +53,10 @@ export function ContactForm({ triggerClassName, triggerLabel = "Обсудить
   }, [retryAfter, status]);
 
   function closeDialog() {
-    setIsOpen(false);
+    if (!isControlled) setUncontrolledIsOpen(false);
     setStatus("idle");
     setRetryAfter(0);
+    onClose?.();
   }
 
   async function submit(data: ContactFormData) {
@@ -70,7 +82,7 @@ export function ContactForm({ triggerClassName, triggerLabel = "Обсудить
   const statusMessage = status === "cooldown" ? `Повторная отправка будет доступна через ${formatRemainingTime(retryAfter)}.` : status === "success" ? "Спасибо, заявка принята. Мы свяжемся с вами в ближайшее время." : null;
 
   return <>
-    <Button className={triggerClassName} onClick={() => setIsOpen(true)}>{triggerLabel}</Button>
+    {showTrigger ? <Button className={triggerClassName} onClick={() => setUncontrolledIsOpen(true)}>{triggerLabel}</Button> : null}
     <Dialog isOpen={isOpen} label="Обсудить проект" onClose={closeDialog}>
       <div className="pr-10 tablet:pr-12">
         <h2 className="font-display text-4xl leading-[1.08] tablet:max-w-md tablet:text-5xl">Расскажите о будущем проекте</h2>
@@ -89,6 +101,23 @@ export function ContactForm({ triggerClassName, triggerLabel = "Обсудить
       </div>
     </Dialog>
   </>;
+}
+
+export function ContactFormProvider({ children }: { children: ReactNode }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return <ContactDialogContext.Provider value={() => setIsOpen(true)}>
+    {children}
+    <ContactForm isOpen={isOpen} onClose={() => setIsOpen(false)} showTrigger={false} />
+  </ContactDialogContext.Provider>;
+}
+
+export function ContactFormTrigger({ triggerClassName, triggerLabel = "Обсудить проект" }: Pick<ContactFormProps, "triggerClassName" | "triggerLabel">) {
+  const openDialog = useContext(ContactDialogContext);
+
+  if (!openDialog) throw new Error("ContactFormTrigger must be rendered inside ContactFormProvider");
+
+  return <Button className={triggerClassName} onClick={openDialog}>{triggerLabel}</Button>;
 }
 
 function FieldError({ children, error }: { children: ReactNode; error?: string }) {

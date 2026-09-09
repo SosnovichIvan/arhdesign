@@ -1,1 +1,1 @@
-export { ContactForm } from "./ui/contactForm";
+export { ContactForm, ContactFormProvider, ContactFormTrigger } from "./ui/contactForm";

@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ContactForm } from "./contactForm";
+import { ContactForm, ContactFormProvider, ContactFormTrigger } from "./contactForm";
 
 describe("ContactForm", () => {
   afterEach(() => {
@@ -66,5 +66,13 @@ describe("ContactForm", () => {
     expect(await screen.findByText(/Не удалось отправить форму/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Закрыть форму" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("uses one canonical dialog for all landing page triggers", () => {
+    render(<ContactFormProvider><ContactFormTrigger /><ContactFormTrigger triggerLabel="Обсудить проект →" /></ContactFormProvider>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Обсудить проект →" }));
+
+    expect(screen.getAllByRole("dialog", { name: "Обсудить проект" })).toHaveLength(1);
   });
 });
