@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --color-bg-page: #f4f1ea;
+  --color-bg-surface: #fbfaf7;
+  --color-bg-inverse: #1e211f;
+  --color-bg-footer: #1e211f;
+  --color-text-footer: #f4f1ea;
+  --color-text-primary: #1e211f;
+  --color-text-secondary: #61645d;
+  --color-text-inverse: #f4f1ea;
+  --color-border: #d7d3ca;
+  --color-action: #596550;
+  --color-action-hover: #495442;
+  --color-focus: #6f7868;
+  --color-field-focus: #4263c7;
+  --shadow-surface: 0 12px 40px rgb(30 33 31 / 10%);
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-ui: "Manrope", Arial, sans-serif;
+}
+
+:root[data-theme="dark"] {
+  --color-bg-page: #111310;
+  --color-bg-surface: #1e211f;
+  --color-bg-inverse: #f4f1ea;
+  --color-bg-footer: #111310;
+  --color-text-footer: #f4f1ea;
+  --color-text-primary: #f4f1ea;
+  --color-text-secondary: #b7b8b1;
+  --color-text-inverse: #1e211f;
+  --color-border: #3a3d38;
+  --color-action: #b7c2ae;
+  --color-action-hover: #d2dcc9;
+  --color-focus: #d2dcc9;
+  --color-field-focus: #91a8ff;
+  --shadow-surface: 0 16px 48px rgb(0 0 0 / 35%);
+}
+
+@theme inline {
+  --color-page: var(--color-bg-page);
+  --color-surface: var(--color-bg-surface);
+  --color-inverse: var(--color-bg-inverse);
+  --color-footer: var(--color-bg-footer);
+  --color-footer-text: var(--color-text-footer);
+  --color-primary: var(--color-text-primary);
+  --color-secondary: var(--color-text-secondary);
+  --color-inverse-text: var(--color-text-inverse);
+  --color-border: var(--color-border);
+  --color-action: var(--color-action);
+  --color-action-hover: var(--color-action-hover);
+  --color-focus: var(--color-focus);
+  --color-field-focus: var(--color-field-focus);
+  --font-display: var(--font-display);
+  --font-ui: var(--font-ui);
+  --shadow-surface: var(--shadow-surface);
+  --breakpoint-tablet: 48rem;
+  --breakpoint-desktop: 90rem;
+}
+
+@layer base {
+  @keyframes carousel-dissolve {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply bg-page text-primary;
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    @apply min-h-screen bg-page font-ui antialiased;
+  }
+
+  button,
+  a,
+  input,
+  textarea {
+    @apply focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus;
+  }
+}

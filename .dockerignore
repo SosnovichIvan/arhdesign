@@ -1,0 +1,11 @@
+.git
+.next
+.execution-state
+node_modules
+coverage
+.env
+.env.*
+!.env.example
+designs
+openspec
+apps/api/coverage.out

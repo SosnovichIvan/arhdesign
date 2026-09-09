@@ -1,0 +1,5 @@
+package: generated
+generate:
+  std-http-server: true
+  models: true
+output: internal/api/generated/contact_api.gen.go

@@ -1,0 +1,59 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+      - run: npm run test:e2e
+      - run: npm audit --omit=dev --audit-level=high
+
+  api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: arhdesign_test
+          POSTGRES_USER: arhdesign
+          POSTGRES_PASSWORD: test-password
+        options: >-
+          --health-cmd "pg_isready -U arhdesign -d arhdesign_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      TEST_DATABASE_URL: postgres://arhdesign:test-password@localhost:5432/arhdesign_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.0"
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+      - run: bash scripts/check-coverage.sh
+      - run: go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 --config oapi-codegen.yaml ../../openapi/contact-api.yaml
+      - run: git diff --exit-code -- internal/api/generated
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

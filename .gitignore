@@ -1,0 +1,10 @@
+.execution-state/
+.next/
+node_modules/
+coverage/
+tsconfig.tsbuildinfo
+.env*
+!.env.example
+.DS_Store
+test-results/
+.execution-state/

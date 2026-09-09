@@ -1,0 +1,1 @@
+{"schema_version":"1.0.0","id":"gemini","executables":["gemini"],"capabilities":{"fresh_context":true,"in_place_compaction":false,"machine_output":true,"session_persistence_control":false,"usage_metrics":false},"launch":{"strategy":"fresh_process","argv":["{executable}","--output-format","stream-json"],"stdin_files":["{prompt_path}","{packet_path}"]}}
