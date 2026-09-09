@@ -1,4 +1,5 @@
 {$CADDY_SITE:localhost} {
+  log
   encode zstd gzip
 
   @api path /api/* /healthz /readyz

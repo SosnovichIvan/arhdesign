@@ -67,3 +67,4 @@ jobs:
             "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" > /dev/null
           webhook_info="$(curl --fail --silent --show-error --retry 3 --max-time 30 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo")"
           printf '%s' "$webhook_info" | jq --exit-status --arg expected_url "https://$CADDY_SITE/api/telegram/webhook" '.ok and .result.url == $expected_url' > /dev/null
+          printf '%s' "$webhook_info" | jq '{url: .result.url, pending_update_count: .result.pending_update_count, last_error_date: .result.last_error_date, last_error_message: .result.last_error_message}'
