@@ -54,7 +54,12 @@ func (e *TelegramWebhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		return
 	}
-	if text == "/start" || text == "/menu" {
+	if text == "/start" {
+		e.clear(m.Chat.ID)
+		e.reply(w, m.Chat.ID, active, "Здравствуйте! Это служебный бот сайта Светланы Полисмаковой — архитектора и дизайнера интерьеров.\n\nЗдесь можно получать уведомления о новых обращениях с сайта. Если вы видите это сообщение, связка сайта и Telegram работает корректно.")
+		return
+	}
+	if text == "/menu" {
 		e.clear(m.Chat.ID)
 		e.reply(w, m.Chat.ID, active, "Меню уведомлений")
 		return
@@ -106,7 +111,7 @@ func (e *TelegramWebhook) reply(w http.ResponseWriter, id int64, active bool, te
 func (e *TelegramWebhook) respond(w http.ResponseWriter, id int64, text, action string) {
 	payload := map[string]any{"method": "sendMessage", "chat_id": id, "text": text}
 	if action != "" {
-		payload["reply_markup"] = map[string]any{"keyboard": [][]string{{action}}, "resize_keyboard": true}
+		payload["reply_markup"] = map[string]any{"keyboard": [][]string{{action}}, "resize_keyboard": true, "is_persistent": true}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)

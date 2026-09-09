@@ -73,6 +73,19 @@ func TestTelegramSubscriptionDialog(t *testing.T) {
 		t.Fatal("unsubscribe must deactivate chat")
 	}
 }
+func TestTelegramStartReturnsWelcomeAndSubscriptionButton(t *testing.T) {
+	endpoint := NewTelegramWebhook("webhook-secret", "admin", "password", &telegramStoreFake{})
+	response := httptest.NewRecorder()
+	endpoint.ServeHTTP(response, telegramRequest(`{"message":{"text":"/start","chat":{"id":9,"type":"private"},"from":{}}}`))
+	payload := telegramResponse(t, response)
+	if !strings.Contains(payload["text"].(string), "связка сайта и Telegram работает корректно") {
+		t.Fatalf("welcome text is missing: %#v", payload)
+	}
+	keyboard := payload["reply_markup"].(map[string]any)["keyboard"].([]any)
+	if keyboard[0].([]any)[0] != "Подписаться" {
+		t.Fatalf("expected subscribe button, got %#v", keyboard)
+	}
+}
 func TestTelegramWebhookRejectsBadSecretAndCredentials(t *testing.T) {
 	store := &telegramStoreFake{}
 	endpoint := NewTelegramWebhook("webhook-secret", "admin", "password", store)
