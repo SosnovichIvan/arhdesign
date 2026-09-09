@@ -49,4 +49,19 @@ jobs:
           export SSHPASS="$VPS_PASSWORD"
           sshpass -e scp -P "$VPS_PORT" -o StrictHostKeyChecking=accept-new runtime-env.b64 "$VPS_USER@$VPS_HOST:/tmp/arhdesign-env.b64"
           sshpass -e scp -P "$VPS_PORT" -o StrictHostKeyChecking=accept-new arhdesign-images.tar.gz "$VPS_USER@$VPS_HOST:/tmp/arhdesign-images.tar.gz"
-          sshpass -e ssh -p "$VPS_PORT" -o StrictHostKeyChecking=accept-new "$VPS_USER@$VPS_HOST" "set -eu; if [ ! -d '$VPS_DEPLOY_PATH/.git' ]; then git clone https://github.com/SosnovichIvan/arhdesign.git '$VPS_DEPLOY_PATH'; fi; git -C '$VPS_DEPLOY_PATH' fetch --tags origin; git -C '$VPS_DEPLOY_PATH' checkout --force '$GITHUB_SHA'; base64 -d /tmp/arhdesign-env.b64 > '$VPS_DEPLOY_PATH/.env'; chmod 600 '$VPS_DEPLOY_PATH/.env'; rm -f /tmp/arhdesign-env.b64; docker load -i /tmp/arhdesign-images.tar.gz; rm -f /tmp/arhdesign-images.tar.gz; cd '$VPS_DEPLOY_PATH'; docker compose --env-file .env -f infra/docker-compose.yml up -d --no-build --wait --wait-timeout 120; set -a; . ./.env; set +a; curl --fail --silent --show-error --data-urlencode \"url=https://$CADDY_SITE/api/telegram/webhook\" --data-urlencode \"secret_token=$TELEGRAM_WEBHOOK_SECRET\" \"https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook\" > /dev/null"
+          sshpass -e ssh -p "$VPS_PORT" -o StrictHostKeyChecking=accept-new "$VPS_USER@$VPS_HOST" "set -eu; if [ ! -d '$VPS_DEPLOY_PATH/.git' ]; then git clone https://github.com/SosnovichIvan/arhdesign.git '$VPS_DEPLOY_PATH'; fi; git -C '$VPS_DEPLOY_PATH' fetch --tags origin; git -C '$VPS_DEPLOY_PATH' checkout --force '$GITHUB_SHA'; base64 -d /tmp/arhdesign-env.b64 > '$VPS_DEPLOY_PATH/.env'; chmod 600 '$VPS_DEPLOY_PATH/.env'; rm -f /tmp/arhdesign-env.b64; docker load -i /tmp/arhdesign-images.tar.gz; rm -f /tmp/arhdesign-images.tar.gz; cd '$VPS_DEPLOY_PATH'; docker compose --env-file .env -f infra/docker-compose.yml up -d --no-build --wait --wait-timeout 120"
+      - name: Configure Telegram webhook and commands
+        env:
+          CADDY_SITE: ${{ secrets.CADDY_SITE }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+        run: |
+          curl --fail --silent --show-error --retry 3 --max-time 30 \
+            --data-urlencode "url=https://$CADDY_SITE/api/telegram/webhook" \
+            --data-urlencode "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+            --data-urlencode 'allowed_updates=["message"]' \
+            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" > /dev/null
+          curl --fail --silent --show-error --retry 3 --max-time 30 \
+            -H 'Content-Type: application/json' \
+            --data '{"commands":[{"command":"start","description":"Открыть меню"},{"command":"menu","description":"Показать меню"}]}' \
+            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" > /dev/null

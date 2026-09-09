@@ -39,8 +39,7 @@ func main() {
 	notifier := notification.NewDispatcher(slog.Default(), 10*time.Second, configuredNotifiers(configuration, retentionStore)...)
 	contactEndpoint := handler.NewContactEndpoint(cooldown, retentionStore, []byte(configuration.CooldownHMACSecret), service.NewRateLimiter(time.Now, time.Minute), notifier)
 	if configuration.TelegramBotToken != "" && retentionStore != nil {
-		bot := notification.NewTelegram(configuration.TelegramBotToken, "", http.DefaultClient)
-		mux.Handle("POST /api/telegram/webhook", handler.NewTelegramWebhook(configuration.TelegramWebhookSecret, configuration.AdminUsername, configuration.AdminPassword, retentionStore, bot))
+		mux.Handle("POST /api/telegram/webhook", handler.NewTelegramWebhook(configuration.TelegramWebhookSecret, configuration.AdminUsername, configuration.AdminPassword, retentionStore))
 	}
 	mux.HandleFunc("GET /healthz", handler.Health)
 	mux.HandleFunc("GET /readyz", handler.Health)
