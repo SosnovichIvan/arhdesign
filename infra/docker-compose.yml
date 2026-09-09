@@ -22,6 +22,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: arhdesign-web:${RELEASE_IMAGE_TAG:-latest}
     build:
       args:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
@@ -38,6 +39,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: arhdesign-api:${RELEASE_IMAGE_TAG:-latest}
     build:
       context: ../apps/api
       dockerfile: Dockerfile
