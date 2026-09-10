@@ -72,6 +72,7 @@ test("uses safe VK and Telegram links in the shared social controls", async ({ p
 });
 
 test("navigates from the fixed header to a landing section and closes the mobile menu", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
   await page.goto("/");
   await page.getByRole("link", { name: "Услуги" }).click();
   await expect(page).toHaveURL(/\/#services$/);
