@@ -36,6 +36,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_WEBHOOK_HOST: ${{ secrets.TELEGRAM_WEBHOOK_HOST }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
           VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -45,19 +46,19 @@ jobs:
           VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           test "$VPS_SSH_AUTH_METHOD" = "password"
-          printf '%s\n' "CADDY_SITE=$CADDY_SITE, designer-svetlana.ru" "NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL" "RELEASE_IMAGE_TAG=$GITHUB_SHA" "POSTGRES_DB=$POSTGRES_DB" "POSTGRES_USER=$POSTGRES_USER" "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" "COOLDOWN_HMAC_SECRET=$COOLDOWN_HMAC_SECRET" "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" "TELEGRAM_WEBHOOK_SECRET=$TELEGRAM_WEBHOOK_SECRET" "ADMIN_USERNAME=$ADMIN_USERNAME" "ADMIN_PASSWORD=$ADMIN_PASSWORD" | base64 -w 0 > runtime-env.b64
+          printf '%s\n' "CADDY_SITE=$CADDY_SITE, designer-svetlana.ru" "TELEGRAM_WEBHOOK_HOST=$TELEGRAM_WEBHOOK_HOST" "NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL" "RELEASE_IMAGE_TAG=$GITHUB_SHA" "POSTGRES_DB=$POSTGRES_DB" "POSTGRES_USER=$POSTGRES_USER" "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" "COOLDOWN_HMAC_SECRET=$COOLDOWN_HMAC_SECRET" "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" "TELEGRAM_WEBHOOK_SECRET=$TELEGRAM_WEBHOOK_SECRET" "ADMIN_USERNAME=$ADMIN_USERNAME" "ADMIN_PASSWORD=$ADMIN_PASSWORD" | base64 -w 0 > runtime-env.b64
           export SSHPASS="$VPS_PASSWORD"
           sshpass -e scp -P "$VPS_PORT" -o StrictHostKeyChecking=accept-new runtime-env.b64 "$VPS_USER@$VPS_HOST:/tmp/arhdesign-env.b64"
           sshpass -e scp -P "$VPS_PORT" -o StrictHostKeyChecking=accept-new arhdesign-images.tar.gz "$VPS_USER@$VPS_HOST:/tmp/arhdesign-images.tar.gz"
           sshpass -e ssh -p "$VPS_PORT" -o StrictHostKeyChecking=accept-new "$VPS_USER@$VPS_HOST" "set -eu; if [ ! -d '$VPS_DEPLOY_PATH/.git' ]; then git clone https://github.com/SosnovichIvan/arhdesign.git '$VPS_DEPLOY_PATH'; fi; git -C '$VPS_DEPLOY_PATH' fetch --tags origin; git -C '$VPS_DEPLOY_PATH' checkout --force '$GITHUB_SHA'; base64 -d /tmp/arhdesign-env.b64 > '$VPS_DEPLOY_PATH/.env'; chmod 600 '$VPS_DEPLOY_PATH/.env'; rm -f /tmp/arhdesign-env.b64; docker load -i /tmp/arhdesign-images.tar.gz; rm -f /tmp/arhdesign-images.tar.gz; cd '$VPS_DEPLOY_PATH'; docker compose --env-file .env -f infra/docker-compose.yml up -d --no-build --wait --wait-timeout 120"
       - name: Configure Telegram webhook and commands
         env:
-          CADDY_SITE: ${{ secrets.CADDY_SITE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_WEBHOOK_HOST: ${{ secrets.TELEGRAM_WEBHOOK_HOST }}
           TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
         run: |
           curl --fail --silent --show-error --retry 3 --max-time 30 \
-            --data-urlencode "url=https://$CADDY_SITE/api/telegram/webhook" \
+            --data-urlencode "url=https://$TELEGRAM_WEBHOOK_HOST/api/telegram/webhook" \
             --data-urlencode "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
             --data-urlencode 'allowed_updates=["message"]' \
             "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" > /dev/null
@@ -66,5 +67,5 @@ jobs:
             --data '{"commands":[{"command":"start","description":"Открыть меню"},{"command":"menu","description":"Показать меню"}]}' \
             "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" > /dev/null
           webhook_info="$(curl --fail --silent --show-error --retry 3 --max-time 30 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo")"
-          printf '%s' "$webhook_info" | jq --exit-status --arg expected_url "https://$CADDY_SITE/api/telegram/webhook" '.ok and .result.url == $expected_url' > /dev/null
+          printf '%s' "$webhook_info" | jq --exit-status --arg expected_url "https://$TELEGRAM_WEBHOOK_HOST/api/telegram/webhook" '.ok and .result.url == $expected_url' > /dev/null
           printf '%s' "$webhook_info" | jq '{url: .result.url, pending_update_count: .result.pending_update_count, last_error_date: .result.last_error_date, last_error_message: .result.last_error_message}'

@@ -57,9 +57,10 @@ docker compose -f infra/docker-compose.yml ps
    POSTGRES_USER=arhdesign
    POSTGRES_PASSWORD=<длинный-уникальный-пароль>
    COOLDOWN_HMAC_SECRET=<результат-openssl-rand-hex-32>
+   TELEGRAM_WEBHOOK_HOST=bot.example.com
    ```
 
-   `CADDY_SITE` — домен без `https://`; Caddy автоматически выпустит и будет обновлять TLS-сертификат. `NEXT_PUBLIC_SITE_URL` — полный публичный URL с `https://`.
+   `CADDY_SITE` — домен сайта без `https://`; Caddy автоматически выпустит и будет обновлять TLS-сертификат. `NEXT_PUBLIC_SITE_URL` — полный публичный URL с `https://`. Для Telegram создайте отдельную proxied DNS-запись `bot` и укажите её в `TELEGRAM_WEBHOOK_HOST`; записи основного домена и `www` могут работать в режиме DNS only. При автоматическом деплое добавьте `TELEGRAM_WEBHOOK_HOST` с тем же значением в Repository secrets GitHub Actions.
 
 5. Соберите и запустите сервисы:
 

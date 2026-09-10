@@ -1,8 +1,8 @@
-{$CADDY_SITE:localhost} {
-  log
-  encode zstd gzip
+{$CADDY_SITE:localhost}, {$TELEGRAM_WEBHOOK_HOST:bot.localhost} {
+	log
+	encode zstd gzip
 
-  @api path /api/* /healthz /readyz
-  reverse_proxy @api api:8080
-  reverse_proxy web:3000
+	@api path /api/* /healthz /readyz
+	reverse_proxy @api api:8080
+	reverse_proxy web:3000
 }

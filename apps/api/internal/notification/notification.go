@@ -2,6 +2,7 @@ package notification
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 )
@@ -34,7 +35,7 @@ func (dispatcher *Dispatcher) Notify(parent context.Context, submission Submissi
 		err := sender.Send(context, submission)
 		cancel()
 		if err != nil {
-			dispatcher.logger.Warn("contact notification failed", "adapter", sender.Name(), "error", err)
+			dispatcher.logger.Warn("contact notification failed", "adapter", sender.Name(), "error_class", fmt.Sprintf("%T", err))
 		}
 	}
 }

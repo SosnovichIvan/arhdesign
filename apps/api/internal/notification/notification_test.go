@@ -1,10 +1,12 @@
 package notification
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 )
@@ -35,6 +37,17 @@ func TestDispatcherIsolatesAdapterErrors(t *testing.T) {
 
 	if !failing.called || !succeeding.called {
 		t.Fatal("every adapter must be called even if a previous adapter fails")
+	}
+}
+
+func TestDispatcherDoesNotLogSensitiveErrorDetails(t *testing.T) {
+	var logOutput bytes.Buffer
+	dispatcher := NewDispatcher(slog.New(slog.NewTextHandler(&logOutput, nil)), time.Second, &fakeSender{name: "telegram", error: errors.New("request contains secret token")})
+
+	dispatcher.Notify(context.Background(), Submission{})
+
+	if strings.Contains(logOutput.String(), "secret token") {
+		t.Fatalf("sensitive adapter error leaked into logs: %s", logOutput.String())
 	}
 }
 

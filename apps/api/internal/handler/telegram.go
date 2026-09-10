@@ -50,7 +50,7 @@ func (e *TelegramWebhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	m := u.Message
 	text := strings.TrimSpace(m.Text)
-	slog.Info("telegram webhook received", "chat_id", m.Chat.ID, "command", text)
+	slog.Info("telegram webhook received")
 	active, err := e.store.TelegramSubscriberActive(r.Context(), m.Chat.ID)
 	if err != nil {
 		w.WriteHeader(200)
