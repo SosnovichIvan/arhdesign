@@ -62,3 +62,35 @@ func TestFromEnvironment(t *testing.T) {
 		t.Fatalf("config = %#v, err = %v", configuration, err)
 	}
 }
+
+func TestTelegramRelayConfiguration(t *testing.T) {
+	valid := map[string]string{
+		"ADMIN_PASSWORD":          "password",
+		"ADMIN_USERNAME":          "admin",
+		"TELEGRAM_BOT_TOKEN":      "token",
+		"TELEGRAM_RELAY_SECRET":   "relay-secret",
+		"TELEGRAM_RELAY_URL":      "https://relay.example.com/sendMessage",
+		"TELEGRAM_WEBHOOK_SECRET": "webhook-secret",
+	}
+	configuration, err := Load(func(key string) string { return valid[key] })
+	if err != nil || configuration.TelegramRelayURL != valid["TELEGRAM_RELAY_URL"] {
+		t.Fatalf("config = %#v, err = %v", configuration, err)
+	}
+
+	for name, mutate := range map[string]func(map[string]string){
+		"missing relay secret": func(values map[string]string) { delete(values, "TELEGRAM_RELAY_SECRET") },
+		"missing bot token":    func(values map[string]string) { delete(values, "TELEGRAM_BOT_TOKEN") },
+		"non-HTTPS URL":        func(values map[string]string) { values["TELEGRAM_RELAY_URL"] = "http://relay.example.com/sendMessage" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			values := make(map[string]string, len(valid))
+			for key, value := range valid {
+				values[key] = value
+			}
+			mutate(values)
+			if _, err := Load(func(key string) string { return values[key] }); err == nil {
+				t.Fatal("invalid relay configuration must fail")
+			}
+		})
+	}
+}

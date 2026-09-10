@@ -14,9 +14,10 @@ type HTTPClient interface {
 }
 
 type Telegram struct {
-	chatID string
-	client HTTPClient
-	url    string
+	authorization string
+	chatID        string
+	client        HTTPClient
+	url           string
 }
 
 type TelegramSubscriberStore interface {
@@ -24,13 +25,18 @@ type TelegramSubscriberStore interface {
 }
 
 type TelegramSubscribers struct {
-	token  string
-	store  TelegramSubscriberStore
-	client HTTPClient
+	authorization string
+	store         TelegramSubscriberStore
+	client        HTTPClient
+	url           string
 }
 
 func NewTelegramSubscribers(token string, store TelegramSubscriberStore, client HTTPClient) TelegramSubscribers {
-	return TelegramSubscribers{token: token, store: store, client: client}
+	return TelegramSubscribers{store: store, client: client, url: "https://api.telegram.org/bot" + token + "/sendMessage"}
+}
+
+func NewTelegramSubscribersViaRelay(relayURL, relaySecret string, store TelegramSubscriberStore, client HTTPClient) TelegramSubscribers {
+	return TelegramSubscribers{authorization: "Bearer " + relaySecret, store: store, client: client, url: relayURL}
 }
 func (TelegramSubscribers) Name() string { return "telegram" }
 func (adapter TelegramSubscribers) Send(ctx context.Context, submission Submission) error {
@@ -39,7 +45,7 @@ func (adapter TelegramSubscribers) Send(ctx context.Context, submission Submissi
 		return err
 	}
 	for _, chatID := range chatIDs {
-		if err := (Telegram{chatID: fmt.Sprint(chatID), client: adapter.client, url: "https://api.telegram.org/bot" + adapter.token + "/sendMessage"}).Send(ctx, submission); err != nil {
+		if err := (Telegram{authorization: adapter.authorization, chatID: fmt.Sprint(chatID), client: adapter.client, url: adapter.url}).Send(ctx, submission); err != nil {
 			return err
 		}
 	}
@@ -78,6 +84,9 @@ func (adapter Telegram) send(ctx context.Context, chatID, text string, menu, act
 		return err
 	}
 	request.Header.Set("Content-Type", "application/json")
+	if adapter.authorization != "" {
+		request.Header.Set("Authorization", adapter.authorization)
+	}
 	response, err := adapter.client.Do(request)
 	if err != nil {
 		return err

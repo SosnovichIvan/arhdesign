@@ -58,9 +58,13 @@ docker compose -f infra/docker-compose.yml ps
    POSTGRES_PASSWORD=<длинный-уникальный-пароль>
    COOLDOWN_HMAC_SECRET=<результат-openssl-rand-hex-32>
    TELEGRAM_WEBHOOK_HOST=bot.example.com
+   TELEGRAM_RELAY_URL=https://arhdesign-telegram-relay.example.workers.dev/sendMessage
+   TELEGRAM_RELAY_SECRET=<длинный-уникальный-ключ>
    ```
 
-   `CADDY_SITE` — домен сайта без `https://`; Caddy автоматически выпустит и будет обновлять TLS-сертификат. `NEXT_PUBLIC_SITE_URL` — полный публичный URL с `https://`. Для Telegram создайте отдельную proxied DNS-запись `bot` и укажите её в `TELEGRAM_WEBHOOK_HOST`; записи основного домена и `www` могут работать в режиме DNS only. При автоматическом деплое добавьте `TELEGRAM_WEBHOOK_HOST` с тем же значением в Repository secrets GitHub Actions.
+   `CADDY_SITE` — домен сайта без `https://`; Caddy автоматически выпустит и будет обновлять TLS-сертификат. `NEXT_PUBLIC_SITE_URL` — полный публичный URL с `https://`. Для Telegram создайте отдельную proxied DNS-запись `bot` и укажите её в `TELEGRAM_WEBHOOK_HOST`; записи основного домена и `www` могут работать в режиме DNS only.
+
+   Если VPS не может устанавливать исходящие соединения с Telegram, разверните Worker из [`infra/cloudflare/telegram-relay.js`](infra/cloudflare/telegram-relay.js). В настройках Worker создайте зашифрованные секреты `TELEGRAM_BOT_TOKEN` и `RELAY_SECRET`, отключите сохранение invocation logs, затем укажите URL `/sendMessage` и тот же `RELAY_SECRET` в переменных `TELEGRAM_RELAY_URL` и `TELEGRAM_RELAY_SECRET` API. Relay принимает только авторизованные JSON-запросы, не хранит тело заявки и передаёт в Telegram только идентификатор чата и текст уведомления.
 
 5. Соберите и запустите сервисы:
 
@@ -72,6 +76,14 @@ docker compose -f infra/docker-compose.yml ps
    ```
 
    Статус `web`, `api` и `postgres` должен быть `healthy`, а `migrate` — завершиться с кодом `0`. Если TLS не выпустился, сначала проверьте DNS и логи: `docker compose --env-file .env -f infra/docker-compose.yml logs caddy`.
+
+### GitHub Actions secrets
+
+Для автоматического релиза по тегу `v*` добавьте в Repository secrets значения из runtime-конфигурации, включая `CADDY_SITE`, `NEXT_PUBLIC_SITE_URL`, `TELEGRAM_WEBHOOK_HOST`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_RELAY_URL`, `TELEGRAM_RELAY_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, параметры PostgreSQL и параметры подключения к VPS. Workflow передаёт эти значения на сервер через временный файл, устанавливает для `.env` права `600` и не добавляет его в Git.
+
+### Персональные данные
+
+Контактная форма сначала сохраняет заявку в PostgreSQL на VPS, а relay используется только для доставки уведомления администратору. В интерфейсе формы прямо указано, что уведомление технически проходит через Cloudflare в Telegram. Перед публичным сбором заявок оператору сайта следует опубликовать отдельную политику обработки персональных данных с реквизитами оператора, составом данных, целями, сроками хранения, порядком отзыва согласия и перечнем внешних обработчиков. Использование зарубежной инфраструктуры также требует отдельно проверить обязанности по трансграничной передаче; одного текста у чекбокса для этого недостаточно.
 
 ### Обновление, backup и rollback
 

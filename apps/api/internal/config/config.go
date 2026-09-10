@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 )
@@ -18,6 +19,8 @@ type Config struct {
 	SMTPUsername          string
 	TelegramBotToken      string
 	TelegramChatID        string
+	TelegramRelaySecret   string
+	TelegramRelayURL      string
 	TelegramWebhookSecret string
 	AdminUsername         string
 	AdminPassword         string
@@ -33,7 +36,7 @@ func Load(getenv func(string) string) (Config, error) {
 		retentionDays = parsedDays
 	}
 	config := Config{
-		CooldownHMACSecret: getenv("COOLDOWN_HMAC_SECRET"), DatabaseURL: getenv("DATABASE_URL"), EmailFrom: getenv("EMAIL_FROM"), EmailTo: getenv("EMAIL_TO"), Port: getenv("PORT"), RetentionDays: retentionDays, SMTPAddress: getenv("SMTP_ADDRESS"), SMTPPassword: getenv("SMTP_PASSWORD"), SMTPUsername: getenv("SMTP_USERNAME"), TelegramBotToken: getenv("TELEGRAM_BOT_TOKEN"), TelegramChatID: getenv("TELEGRAM_CHAT_ID"), TelegramWebhookSecret: getenv("TELEGRAM_WEBHOOK_SECRET"), AdminUsername: getenv("ADMIN_USERNAME"), AdminPassword: getenv("ADMIN_PASSWORD"),
+		CooldownHMACSecret: getenv("COOLDOWN_HMAC_SECRET"), DatabaseURL: getenv("DATABASE_URL"), EmailFrom: getenv("EMAIL_FROM"), EmailTo: getenv("EMAIL_TO"), Port: getenv("PORT"), RetentionDays: retentionDays, SMTPAddress: getenv("SMTP_ADDRESS"), SMTPPassword: getenv("SMTP_PASSWORD"), SMTPUsername: getenv("SMTP_USERNAME"), TelegramBotToken: getenv("TELEGRAM_BOT_TOKEN"), TelegramChatID: getenv("TELEGRAM_CHAT_ID"), TelegramRelaySecret: getenv("TELEGRAM_RELAY_SECRET"), TelegramRelayURL: getenv("TELEGRAM_RELAY_URL"), TelegramWebhookSecret: getenv("TELEGRAM_WEBHOOK_SECRET"), AdminUsername: getenv("ADMIN_USERNAME"), AdminPassword: getenv("ADMIN_PASSWORD"),
 	}
 	if config.Port == "" {
 		config.Port = "8080"
@@ -49,6 +52,18 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if config.TelegramBotToken != "" && (config.TelegramWebhookSecret == "" || config.AdminUsername == "" || config.AdminPassword == "") {
 		return Config{}, fmt.Errorf("TELEGRAM_WEBHOOK_SECRET, ADMIN_USERNAME and ADMIN_PASSWORD are required with TELEGRAM_BOT_TOKEN")
+	}
+	if (config.TelegramRelayURL == "") != (config.TelegramRelaySecret == "") {
+		return Config{}, fmt.Errorf("TELEGRAM_RELAY_URL and TELEGRAM_RELAY_SECRET must be set together")
+	}
+	if config.TelegramRelayURL != "" {
+		if config.TelegramBotToken == "" {
+			return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN is required with TELEGRAM_RELAY_URL")
+		}
+		relayURL, err := url.ParseRequestURI(config.TelegramRelayURL)
+		if err != nil || relayURL.Scheme != "https" || relayURL.Host == "" {
+			return Config{}, fmt.Errorf("TELEGRAM_RELAY_URL must be a valid HTTPS URL")
+		}
 	}
 	return config, nil
 }

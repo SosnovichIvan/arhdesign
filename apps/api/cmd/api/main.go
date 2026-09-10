@@ -95,7 +95,11 @@ func configuredNotifiers(configuration config.Config, store repository.TelegramS
 		senders = append(senders, notification.NewEmail(configuration.EmailFrom, configuration.EmailTo, transport))
 	}
 	if configuration.TelegramBotToken != "" && store != nil {
-		senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, http.DefaultClient))
+		if configuration.TelegramRelayURL != "" {
+			senders = append(senders, notification.NewTelegramSubscribersViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, store, http.DefaultClient))
+		} else {
+			senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, http.DefaultClient))
+		}
 	} else if configuration.TelegramBotToken != "" && configuration.TelegramChatID != "" {
 		senders = append(senders, notification.NewTelegram(configuration.TelegramBotToken, configuration.TelegramChatID, http.DefaultClient))
 	}
