@@ -56,6 +56,26 @@ func TestPostgresStoreIntegration(t *testing.T) {
 
 	store := NewPostgres(pool)
 	now := time.Date(2026, time.September, 9, 12, 0, 0, 0, time.UTC)
+	if err := store.ActivateTelegramSubscriber(context, 123, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := store.TelegramSubscriberActive(context, 123); err != nil || !active {
+		t.Fatalf("active subscriber = %v, error = %v; want true and nil", active, err)
+	}
+	chatIDs, err := store.ActiveTelegramChatIDs(context)
+	if err != nil || len(chatIDs) != 1 || chatIDs[0] != 123 {
+		t.Fatalf("active chat IDs = %#v, error = %v", chatIDs, err)
+	}
+	if err := store.DeactivateTelegramSubscriber(context, 123); err != nil {
+		t.Fatal(err)
+	}
+	if active, err := store.TelegramSubscriberActive(context, 123); err != nil || active {
+		t.Fatalf("active subscriber after deactivation = %v, error = %v; want false and nil", active, err)
+	}
+	chatIDs, err = store.ActiveTelegramChatIDs(context)
+	if err != nil || len(chatIDs) != 0 {
+		t.Fatalf("active chat IDs after deactivation = %#v, error = %v", chatIDs, err)
+	}
 	tokenHash := []byte("test-token-hash")
 	if err := store.CreateSubmissionAndSetCooldown(context, ContactSubmission{
 		Name:                  "Анна Иванова",
@@ -152,5 +172,26 @@ func TestPostgresStoreReturnsErrorsFromClosedPool(t *testing.T) {
 	}
 	if _, err := store.CooldownRetryAfter(ctx, []byte("token"), time.Now()); err == nil {
 		t.Fatal("cooldown lookup must report a closed-pool error")
+	}
+	if _, err := store.TelegramSubscriberActive(ctx, 123); err == nil {
+		t.Fatal("subscriber lookup must report a closed-pool error")
+	}
+	if err := store.ActivateTelegramSubscriber(ctx, 123, "admin"); err == nil {
+		t.Fatal("subscriber activation must report a closed-pool error")
+	}
+	if err := store.DeactivateTelegramSubscriber(ctx, 123); err == nil {
+		t.Fatal("subscriber deactivation must report a closed-pool error")
+	}
+	if _, err := store.ActiveTelegramChatIDs(ctx); err == nil {
+		t.Fatal("subscriber listing must report a closed-pool error")
+	}
+	if err := store.RecordTelegramNotification(ctx, 123, 42, time.Now()); err == nil {
+		t.Fatal("notification recording must report a closed-pool error")
+	}
+	if _, err := store.DueTelegramNotifications(ctx, time.Now(), 100); err == nil {
+		t.Fatal("notification listing must report a closed-pool error")
+	}
+	if err := store.MarkTelegramNotificationDeleted(ctx, 1, time.Now()); err == nil {
+		t.Fatal("notification marking must report a closed-pool error")
 	}
 }

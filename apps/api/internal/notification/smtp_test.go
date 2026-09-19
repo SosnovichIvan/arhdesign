@@ -64,6 +64,43 @@ func TestSMTPTransportReturnsDialError(t *testing.T) {
 	}
 }
 
+func TestSMTPTransportRequiresAuthSupport(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		connection, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer connection.Close()
+		reader := bufio.NewReader(connection)
+		_, _ = connection.Write([]byte("220 test SMTP\r\n"))
+		for {
+			line, readErr := reader.ReadString('\n')
+			if readErr != nil {
+				return
+			}
+			if strings.HasPrefix(line, "EHLO") {
+				_, _ = connection.Write([]byte("250 test\r\n"))
+			} else if strings.HasPrefix(line, "QUIT") {
+				_, _ = connection.Write([]byte("221 bye\r\n"))
+				return
+			}
+		}
+	}()
+
+	transport := NewSMTPTransport(listener.Addr().String(), "admin", "password")
+	if err := transport.Send(context.Background(), EmailMessage{}); err == nil || !strings.Contains(err.Error(), "does not support AUTH") {
+		t.Fatalf("error = %v; want unsupported AUTH error", err)
+	}
+	<-finished
+}
+
 func TestSMTPTransportString(t *testing.T) {
 	if NewSMTPTransport(" smtp.example.com:587 ", "", "").String() != "smtp.example.com:587" {
 		t.Fatal("transport string must be trimmed")

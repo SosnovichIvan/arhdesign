@@ -21,16 +21,27 @@ type telegramSubscriberStoreStub struct {
 	chatIDs   []int64
 	messageID int64
 	deleteAt  time.Time
+	recordErr error
+	listErr   error
 }
 
 func (store telegramSubscriberStoreStub) ActiveTelegramChatIDs(context.Context) ([]int64, error) {
-	return store.chatIDs, nil
+	return store.chatIDs, store.listErr
 }
 
 func (store *telegramSubscriberStoreStub) RecordTelegramNotification(_ context.Context, _ int64, messageID int64, deleteAt time.Time) error {
 	store.messageID = messageID
 	store.deleteAt = deleteAt
-	return nil
+	return store.recordErr
+}
+
+func TestTelegramSubscriberConstructorsAndName(t *testing.T) {
+	store := &telegramSubscriberStoreStub{}
+	direct := NewTelegramSubscribers("secret", store, http.DefaultClient, time.Hour)
+	if direct.Name() != "telegram" || !strings.Contains(direct.url, "/botsecret/sendMessage") || direct.retention != time.Hour {
+		t.Fatalf("unexpected direct subscriber adapter: %#v", direct)
+	}
+	(NoopDispatcher{}).Notify(context.Background(), Submission{})
 }
 
 func TestTelegramSendsJSONToBotAPI(t *testing.T) {
@@ -130,5 +141,77 @@ func TestTelegramDeletesMessageThroughMatchingEndpoint(t *testing.T) {
 	adapter := NewTelegramViaRelay(server.URL+"/sendMessage", "relay-secret", server.Client())
 	if err := adapter.DeleteMessage(context.Background(), 123, 42); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTelegramSendMessageIncludesMenu(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), "Отписаться") || !strings.Contains(string(body), "keyboard") {
+			t.Fatalf("unexpected menu payload: %s", body)
+		}
+		_, _ = response.Write([]byte(`{"ok":true,"result":{"message_id":43}}`))
+	}))
+	defer server.Close()
+
+	adapter := Telegram{client: server.Client(), url: server.URL}
+	if err := adapter.SendMessage(context.Background(), 123, "Меню", true, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTelegramRejectsInvalidSuccessResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		_, _ = response.Write([]byte(`{"ok":true,"result":{}}`))
+	}))
+	defer server.Close()
+	adapter := Telegram{chatID: "123", client: server.Client(), url: server.URL}
+	if err := adapter.Send(context.Background(), Submission{}); err == nil {
+		t.Fatal("invalid Telegram success response must fail")
+	}
+}
+
+func TestTelegramDeletesImmediatelyWhenReceiptCannotBeRecorded(t *testing.T) {
+	deleted := false
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/deleteMessage" {
+			deleted = true
+			_, _ = response.Write([]byte(`{"ok":true,"result":true}`))
+			return
+		}
+		_, _ = response.Write([]byte(`{"ok":true,"result":{"message_id":42}}`))
+	}))
+	defer server.Close()
+	store := &telegramSubscriberStoreStub{chatIDs: []int64{123}, recordErr: errors.New("database unavailable")}
+	adapter := TelegramSubscribers{store: store, client: server.Client(), retention: time.Hour, url: server.URL + "/sendMessage"}
+	if err := adapter.Send(context.Background(), Submission{}); err == nil || !deleted {
+		t.Fatalf("send error = %v, deleted = %v; want error and immediate deletion", err, deleted)
+	}
+}
+
+func TestTelegramSubscribersReportsLookupError(t *testing.T) {
+	store := &telegramSubscriberStoreStub{listErr: errors.New("database unavailable")}
+	adapter := NewTelegramSubscribers("secret", store, http.DefaultClient, time.Hour)
+	if err := adapter.Send(context.Background(), Submission{}); err == nil {
+		t.Fatal("subscriber lookup error must be returned")
+	}
+}
+
+func TestTelegramDeleteReportsConstructionAndHTTPError(t *testing.T) {
+	invalid := Telegram{client: http.DefaultClient, url: "://not-a-url/sendMessage"}
+	if err := invalid.DeleteMessage(context.Background(), 123, 42); err == nil {
+		t.Fatal("invalid delete URL must fail")
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+	adapter := Telegram{client: server.Client(), url: server.URL + "/sendMessage"}
+	if err := adapter.DeleteMessage(context.Background(), 123, 42); err == nil {
+		t.Fatal("unsuccessful delete response must fail")
 	}
 }
