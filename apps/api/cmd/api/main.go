@@ -48,6 +48,13 @@ func main() {
 	defer stop()
 	if retentionStore != nil {
 		go runRetentionCleanup(signalContext, retentionStore, configuration.RetentionDays)
+		if configuration.TelegramBotToken != "" {
+			telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", http.DefaultClient)
+			if configuration.TelegramRelayURL != "" {
+				telegramClient = notification.NewTelegramViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, http.DefaultClient)
+			}
+			go runTelegramRetentionCleanup(signalContext, notification.NewTelegramRetention(telegramClient, retentionStore))
+		}
 	}
 	server := &http.Server{Addr: ":" + configuration.Port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -64,6 +71,32 @@ func main() {
 	}
 }
 
+func runTelegramRetentionCleanup(ctx context.Context, retention notification.TelegramRetention) {
+	cleanup := func() {
+		requestContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		deleted, err := retention.DeleteDue(requestContext, time.Now())
+		if err != nil {
+			slog.Warn("telegram notification retention cleanup failed", "error_class", "telegram_retention")
+			return
+		}
+		if deleted > 0 {
+			slog.Info("telegram notification retention cleanup completed", "deleted_count", deleted)
+		}
+	}
+	cleanup()
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
+}
+
 func runRetentionCleanup(ctx context.Context, store *repository.Postgres, retentionDays int) {
 	cleanup := func() {
 		deleted, err := store.DeleteSubmissionsOlderThan(ctx, time.Now().AddDate(0, 0, -retentionDays))
@@ -73,6 +106,14 @@ func runRetentionCleanup(ctx context.Context, store *repository.Postgres, retent
 		}
 		if deleted > 0 {
 			slog.Info("contact retention cleanup completed", "deleted_count", deleted)
+		}
+		expiredCooldowns, err := store.DeleteExpiredCooldowns(ctx, time.Now())
+		if err != nil {
+			slog.Warn("contact cooldown cleanup failed", "error_class", "cooldown_retention")
+			return
+		}
+		if expiredCooldowns > 0 {
+			slog.Info("contact cooldown cleanup completed", "deleted_count", expiredCooldowns)
 		}
 	}
 	cleanup()
@@ -88,17 +129,18 @@ func runRetentionCleanup(ctx context.Context, store *repository.Postgres, retent
 	}
 }
 
-func configuredNotifiers(configuration config.Config, store repository.TelegramSubscriberStore) []notification.Sender {
+func configuredNotifiers(configuration config.Config, store *repository.Postgres) []notification.Sender {
 	senders := make([]notification.Sender, 0, 2)
 	if configuration.SMTPAddress != "" && configuration.EmailFrom != "" && configuration.EmailTo != "" {
 		transport := notification.NewSMTPTransport(configuration.SMTPAddress, configuration.SMTPUsername, configuration.SMTPPassword)
 		senders = append(senders, notification.NewEmail(configuration.EmailFrom, configuration.EmailTo, transport))
 	}
 	if configuration.TelegramBotToken != "" && store != nil {
+		retention := time.Duration(configuration.TelegramNotificationRetentionHours) * time.Hour
 		if configuration.TelegramRelayURL != "" {
-			senders = append(senders, notification.NewTelegramSubscribersViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, store, http.DefaultClient))
+			senders = append(senders, notification.NewTelegramSubscribersViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, store, http.DefaultClient, retention))
 		} else {
-			senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, http.DefaultClient))
+			senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, http.DefaultClient, retention))
 		}
 	} else if configuration.TelegramBotToken != "" && configuration.TelegramChatID != "" {
 		senders = append(senders, notification.NewTelegram(configuration.TelegramBotToken, configuration.TelegramChatID, http.DefaultClient))

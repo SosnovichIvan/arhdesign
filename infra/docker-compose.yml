@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-file: "5"
+    max-size: "10m"
+
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -20,6 +26,7 @@ services:
     networks:
       - public
       - private
+    logging: *default-logging
     restart: unless-stopped
 
   web:
@@ -37,6 +44,7 @@ services:
       start_period: 20s
     networks:
       - private
+    logging: *default-logging
     restart: unless-stopped
 
   api:
@@ -50,10 +58,12 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       COOLDOWN_HMAC_SECRET: ${COOLDOWN_HMAC_SECRET}
+      CONTACT_RETENTION_DAYS: ${CONTACT_RETENTION_DAYS:-365}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_RELAY_URL: ${TELEGRAM_RELAY_URL:-}
       TELEGRAM_RELAY_SECRET: ${TELEGRAM_RELAY_SECRET:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+      TELEGRAM_NOTIFICATION_RETENTION_HOURS: ${TELEGRAM_NOTIFICATION_RETENTION_HOURS:-24}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     healthcheck:
@@ -65,6 +75,7 @@ services:
     networks:
       - public
       - private
+    logging: *default-logging
     restart: unless-stopped
 
   migrate:
@@ -82,6 +93,7 @@ services:
     command: ["/bin/sh", "-ec", "for migration in /migrations/*.sql; do psql --set ON_ERROR_STOP=1 --file=\"$$migration\"; done"]
     networks:
       - private
+    logging: *default-logging
     restart: "no"
 
   postgres:
@@ -97,9 +109,30 @@ services:
       retries: 5
     networks:
       - private
+    logging: *default-logging
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+  postgres-backup:
+    image: postgres:17-alpine
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      PGDATABASE: ${POSTGRES_DB}
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGUSER: ${POSTGRES_USER}
+    command: ["/bin/sh", "/scripts/backup-postgres.sh"]
+    volumes:
+      - ./scripts/backup-postgres.sh:/scripts/backup-postgres.sh:ro
+      - postgres_backups:/backups
+    networks:
+      - private
+    logging: *default-logging
+    restart: unless-stopped
 
 networks:
   public:
@@ -110,3 +143,4 @@ volumes:
   caddy_config:
   caddy_data:
   postgres_data:
+  postgres_backups:

@@ -1,11 +1,13 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import Link from "next/link";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
 import { Button, Dialog, Input, Textarea } from "@/shared/ui";
+import { consent, privacy } from "@/shared/config";
 
 const contactFormSchema = z.object({
   name: z.string().trim().min(2, "Укажите имя"),
@@ -92,7 +94,7 @@ export function ContactForm({ triggerClassName, triggerLabel = "Обсудить
           <FieldError error={form.formState.errors.contact?.message}><FieldLabel label="Телефон или почта" required><Input aria-invalid={Boolean(form.formState.errors.contact)} autoComplete="email" className="mt-2 border-x-0 border-t-0 border-b border-border bg-transparent px-0 py-3 text-sm focus:border-field-focus focus:outline-none focus:ring-0 focus-visible:outline-none" placeholder="Удобный способ связи" {...form.register("contact")} /></FieldLabel></FieldError>
           <FieldError error={form.formState.errors.projectType?.message}><FieldLabel label="Тип проекта" required><Input aria-invalid={Boolean(form.formState.errors.projectType)} className="mt-2 border-x-0 border-t-0 border-b border-border bg-transparent px-0 py-3 text-sm focus:border-field-focus focus:outline-none focus:ring-0 focus-visible:outline-none" placeholder="Дом, квартира, коммерческое пространство" {...form.register("projectType")} /></FieldLabel></FieldError>
           <FieldError error={form.formState.errors.projectDetails?.message}><FieldLabel label="О проекте"><Textarea aria-invalid={Boolean(form.formState.errors.projectDetails)} className="mt-2 min-h-[76px] border-x-0 border-t-0 border-b border-border bg-transparent px-0 py-3 text-sm focus:border-field-focus focus:outline-none focus:ring-0 focus-visible:outline-none" placeholder="Площадь, сроки, пожелания" {...form.register("projectDetails")} /></FieldLabel></FieldError>
-          <label className="flex cursor-pointer items-start gap-3 text-xs leading-[18px] text-secondary"><input className="mt-1 size-4 accent-action" type="checkbox" {...form.register("consent")} /><span>Отправляя форму, вы соглашаетесь на обработку данных для ответа на запрос. Уведомление администратору технически передаётся через Cloudflare в Telegram.</span></label>
+          <div className="flex items-start gap-3 text-xs leading-[18px] text-secondary"><input aria-describedby="personal-data-consent-details" className="mt-1 size-4 shrink-0 accent-action" id="personal-data-consent" type="checkbox" {...form.register("consent")} /><div id="personal-data-consent-details"><label className="cursor-pointer" htmlFor="personal-data-consent">Я даю {consent.operatorName} согласие на обработку персональных данных для рассмотрения обращения и связи со мной.</label> <a className="text-primary underline decoration-action underline-offset-4 transition-colors hover:text-action focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-action" href={consent.documentHref} rel="noopener noreferrer" target="_blank">Полный текст согласия (PDF)</a>. <Link className="text-primary underline decoration-action underline-offset-4 transition-colors hover:text-action focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-action" href={privacy.pageHref}>Политика обработки персональных данных</Link>.</div></div>
           {form.formState.errors.consent?.message ? <p className="text-sm text-red-700" role="alert">{form.formState.errors.consent.message}</p> : null}
           <Input aria-hidden="true" autoComplete="off" className="hidden" tabIndex={-1} {...form.register("website")} />
           {status === "failure" ? <p className="text-sm text-red-700" role="alert">Не удалось отправить форму. Попробуйте ещё раз.</p> : null}

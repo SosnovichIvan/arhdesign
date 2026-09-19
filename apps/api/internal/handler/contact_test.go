@@ -168,3 +168,26 @@ func TestContactWithStoreHandlesPersistenceOutcomes(t *testing.T) {
 		t.Fatal("optional project details must persist as an empty string")
 	}
 }
+
+func TestContactPersistsConsentReference(t *testing.T) {
+	store := &fakeStore{}
+	handler := NewContactWithStore(service.NewCooldown(time.Now), store, []byte("secret"))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/contact-submissions", strings.NewReader(`{"name":"Анна","contact":"anna@example.com","projectType":"Квартира","consent":true}`))
+	request.Header.Set("Referer", "https://designer-svetlana.ru/#contact")
+	response := httptest.NewRecorder()
+
+	handler(response, request)
+
+	if response.Code != http.StatusCreated || len(store.submissions) != 1 {
+		t.Fatalf("status = %d, submissions = %d; want 201 and 1", response.Code, len(store.submissions))
+	}
+	if store.submissions[0].ConsentVersion != repository.ConsentVersion {
+		t.Fatalf("consent version = %q, want %q", store.submissions[0].ConsentVersion, repository.ConsentVersion)
+	}
+	if store.submissions[0].ConsentDocumentPath != repository.ConsentDocumentPath {
+		t.Fatalf("consent document = %q, want %q", store.submissions[0].ConsentDocumentPath, repository.ConsentDocumentPath)
+	}
+	if !store.submissions[0].ConsentGranted || store.submissions[0].ConsentDocumentSHA256 != repository.ConsentDocumentSHA256 || store.submissions[0].ConsentMethod != repository.ConsentMethod || store.submissions[0].ConsentText != repository.ConsentText || store.submissions[0].ConsentSourceURL != "https://designer-svetlana.ru/#contact" {
+		t.Fatalf("unexpected consent audit: %#v", store.submissions[0])
+	}
+}

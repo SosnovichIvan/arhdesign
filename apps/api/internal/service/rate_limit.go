@@ -21,6 +21,11 @@ func (limiter *RateLimiter) RetryAfter(key string) time.Duration {
 	defer limiter.mutex.Unlock()
 
 	currentTime := limiter.now()
+	for storedKey, until := range limiter.hits {
+		if !until.After(currentTime) {
+			delete(limiter.hits, storedKey)
+		}
+	}
 	if until := limiter.hits[key]; until.After(currentTime) {
 		return until.Sub(currentTime)
 	}

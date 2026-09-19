@@ -8,22 +8,23 @@ import (
 )
 
 type Config struct {
-	CooldownHMACSecret    string
-	DatabaseURL           string
-	EmailFrom             string
-	EmailTo               string
-	Port                  string
-	RetentionDays         int
-	SMTPAddress           string
-	SMTPPassword          string
-	SMTPUsername          string
-	TelegramBotToken      string
-	TelegramChatID        string
-	TelegramRelaySecret   string
-	TelegramRelayURL      string
-	TelegramWebhookSecret string
-	AdminUsername         string
-	AdminPassword         string
+	CooldownHMACSecret                 string
+	DatabaseURL                        string
+	EmailFrom                          string
+	EmailTo                            string
+	Port                               string
+	RetentionDays                      int
+	SMTPAddress                        string
+	SMTPPassword                       string
+	SMTPUsername                       string
+	TelegramBotToken                   string
+	TelegramChatID                     string
+	TelegramNotificationRetentionHours int
+	TelegramRelaySecret                string
+	TelegramRelayURL                   string
+	TelegramWebhookSecret              string
+	AdminUsername                      string
+	AdminPassword                      string
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -35,8 +36,16 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		retentionDays = parsedDays
 	}
+	telegramNotificationRetentionHours := 24
+	if configuredHours := getenv("TELEGRAM_NOTIFICATION_RETENTION_HOURS"); configuredHours != "" {
+		parsedHours, err := strconv.Atoi(configuredHours)
+		if err != nil || parsedHours < 1 || parsedHours > 24 {
+			return Config{}, fmt.Errorf("TELEGRAM_NOTIFICATION_RETENTION_HOURS must be between 1 and 24")
+		}
+		telegramNotificationRetentionHours = parsedHours
+	}
 	config := Config{
-		CooldownHMACSecret: getenv("COOLDOWN_HMAC_SECRET"), DatabaseURL: getenv("DATABASE_URL"), EmailFrom: getenv("EMAIL_FROM"), EmailTo: getenv("EMAIL_TO"), Port: getenv("PORT"), RetentionDays: retentionDays, SMTPAddress: getenv("SMTP_ADDRESS"), SMTPPassword: getenv("SMTP_PASSWORD"), SMTPUsername: getenv("SMTP_USERNAME"), TelegramBotToken: getenv("TELEGRAM_BOT_TOKEN"), TelegramChatID: getenv("TELEGRAM_CHAT_ID"), TelegramRelaySecret: getenv("TELEGRAM_RELAY_SECRET"), TelegramRelayURL: getenv("TELEGRAM_RELAY_URL"), TelegramWebhookSecret: getenv("TELEGRAM_WEBHOOK_SECRET"), AdminUsername: getenv("ADMIN_USERNAME"), AdminPassword: getenv("ADMIN_PASSWORD"),
+		CooldownHMACSecret: getenv("COOLDOWN_HMAC_SECRET"), DatabaseURL: getenv("DATABASE_URL"), EmailFrom: getenv("EMAIL_FROM"), EmailTo: getenv("EMAIL_TO"), Port: getenv("PORT"), RetentionDays: retentionDays, SMTPAddress: getenv("SMTP_ADDRESS"), SMTPPassword: getenv("SMTP_PASSWORD"), SMTPUsername: getenv("SMTP_USERNAME"), TelegramBotToken: getenv("TELEGRAM_BOT_TOKEN"), TelegramChatID: getenv("TELEGRAM_CHAT_ID"), TelegramNotificationRetentionHours: telegramNotificationRetentionHours, TelegramRelaySecret: getenv("TELEGRAM_RELAY_SECRET"), TelegramRelayURL: getenv("TELEGRAM_RELAY_URL"), TelegramWebhookSecret: getenv("TELEGRAM_WEBHOOK_SECRET"), AdminUsername: getenv("ADMIN_USERNAME"), AdminPassword: getenv("ADMIN_PASSWORD"),
 	}
 	if config.Port == "" {
 		config.Port = "8080"

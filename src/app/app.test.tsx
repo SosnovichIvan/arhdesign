@@ -17,6 +17,7 @@ vi.mock("next/navigation", () => ({ notFound, useRouter: () => router }));
 
 import RootLayout, { metadata } from "./layout";
 import HomePage from "./page";
+import PrivacyPage, { metadata as privacyMetadata } from "./privacy/page";
 import ProjectsPage from "./projects/page";
 import ProjectPage, { generateMetadata, generateStaticParams } from "./projects/[slug]/page";
 import robots from "./robots";
@@ -82,6 +83,11 @@ describe("public portfolio UI", () => {
     render(<ProjectsPage />);
     expect(screen.getByRole("heading", { name: "Проекты" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Назад" })).toBeTruthy();
+
+    cleanup();
+    render(<PrivacyPage />);
+    expect(screen.getByRole("heading", { name: "Политика обработки персональных данных", level: 1 })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Открыть политику в PDF" }).getAttribute("href")).toBe("/documents/personal-data-policy-2026-09-19-v1.pdf");
   });
 
   it("renders shared cards, controls and social links", () => {
@@ -173,7 +179,8 @@ describe("public portfolio UI", () => {
     expect((await generateMetadata({ params: Promise.resolve({ slug: projects[0].slug }) })).title).toBe(projects[0].title);
     expect(await generateMetadata({ params: Promise.resolve({ slug: "missing" }) })).toEqual({});
     expect(robots().rules).toEqual({ allow: "/", userAgent: "*" });
-    expect(sitemap()).toHaveLength(5);
+    expect(privacyMetadata.alternates?.canonical).toBe("/privacy");
+    expect(sitemap()).toHaveLength(6);
   });
 
   it("renders a project page and sends unknown projects to notFound", async () => {

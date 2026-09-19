@@ -12,7 +12,7 @@ func TestLoad(t *testing.T) {
 		}
 		return ""
 	})
-	if err != nil || config.Port != "8080" {
+	if err != nil || config.Port != "8080" || config.TelegramNotificationRetentionHours != 24 {
 		t.Fatalf("config = %#v, err = %v", config, err)
 	}
 	_, err = Load(func(key string) string {
@@ -51,14 +51,24 @@ func TestLoad(t *testing.T) {
 	if err == nil {
 		t.Fatal("invalid retention days must fail")
 	}
+	_, err = Load(func(key string) string {
+		if key == "TELEGRAM_NOTIFICATION_RETENTION_HOURS" {
+			return "48"
+		}
+		return ""
+	})
+	if err == nil {
+		t.Fatal("invalid Telegram retention hours must fail")
+	}
 }
 
 func TestFromEnvironment(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("COOLDOWN_HMAC_SECRET", "secret")
 	t.Setenv("CONTACT_RETENTION_DAYS", "30")
+	t.Setenv("TELEGRAM_NOTIFICATION_RETENTION_HOURS", "12")
 	configuration, err := FromEnvironment()
-	if err != nil || configuration.RetentionDays != 30 {
+	if err != nil || configuration.RetentionDays != 30 || configuration.TelegramNotificationRetentionHours != 12 {
 		t.Fatalf("config = %#v, err = %v", configuration, err)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type failingHTTPClient struct{}
@@ -17,11 +18,19 @@ func (failingHTTPClient) Do(*http.Request) (*http.Response, error) {
 }
 
 type telegramSubscriberStoreStub struct {
-	chatIDs []int64
+	chatIDs   []int64
+	messageID int64
+	deleteAt  time.Time
 }
 
 func (store telegramSubscriberStoreStub) ActiveTelegramChatIDs(context.Context) ([]int64, error) {
 	return store.chatIDs, nil
+}
+
+func (store *telegramSubscriberStoreStub) RecordTelegramNotification(_ context.Context, _ int64, messageID int64, deleteAt time.Time) error {
+	store.messageID = messageID
+	store.deleteAt = deleteAt
+	return nil
 }
 
 func TestTelegramSendsJSONToBotAPI(t *testing.T) {
@@ -36,7 +45,7 @@ func TestTelegramSendsJSONToBotAPI(t *testing.T) {
 		if !strings.Contains(string(body), `"chat_id":"123"`) || !strings.Contains(string(body), "Анна") {
 			t.Fatalf("unexpected telegram payload: %s", body)
 		}
-		response.WriteHeader(http.StatusOK)
+		_, _ = response.Write([]byte(`{"ok":true,"result":{"message_id":42}}`))
 	}))
 	defer server.Close()
 
@@ -88,12 +97,38 @@ func TestTelegramSubscribersSendThroughAuthenticatedRelay(t *testing.T) {
 		if !strings.Contains(string(body), `"chat_id":"123"`) || strings.Contains(string(body), "relay-secret") {
 			t.Fatalf("unexpected relay payload: %s", body)
 		}
-		response.WriteHeader(http.StatusOK)
+		_, _ = response.Write([]byte(`{"ok":true,"result":{"message_id":42}}`))
 	}))
 	defer server.Close()
 
-	adapter := NewTelegramSubscribersViaRelay(server.URL+"/sendMessage", "relay-secret", telegramSubscriberStoreStub{chatIDs: []int64{123}}, server.Client())
+	store := &telegramSubscriberStoreStub{chatIDs: []int64{123}}
+	adapter := NewTelegramSubscribersViaRelay(server.URL+"/sendMessage", "relay-secret", store, server.Client(), 24*time.Hour)
 	if err := adapter.Send(context.Background(), Submission{Name: "Анна", Contact: "anna@example.com", ProjectType: "Квартира"}); err != nil {
+		t.Fatal(err)
+	}
+	if store.messageID != 42 || time.Until(store.deleteAt) < 23*time.Hour {
+		t.Fatalf("notification receipt was not recorded: %#v", store)
+	}
+}
+
+func TestTelegramDeletesMessageThroughMatchingEndpoint(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/deleteMessage" || request.Header.Get("Authorization") != "Bearer relay-secret" {
+			t.Fatalf("unexpected delete request: %s", request.URL.Path)
+		}
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(body), `"message_id":42`) {
+			t.Fatalf("unexpected deletion payload: %s", body)
+		}
+		_, _ = response.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer server.Close()
+
+	adapter := NewTelegramViaRelay(server.URL+"/sendMessage", "relay-secret", server.Client())
+	if err := adapter.DeleteMessage(context.Background(), 123, 42); err != nil {
 		t.Fatal(err)
 	}
 }

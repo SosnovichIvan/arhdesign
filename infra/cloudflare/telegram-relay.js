@@ -6,7 +6,7 @@ const worker = {
     if (request.method === "GET" && url.pathname === "/healthz") {
       return new Response(JSON.stringify({ status: "ok" }), { status: 200, headers });
     }
-    if (url.pathname !== "/sendMessage") {
+    if (url.pathname !== "/sendMessage" && url.pathname !== "/deleteMessage") {
       return new Response(JSON.stringify({ error: "not_found" }), { status: 404, headers });
     }
     if (request.method !== "POST") {
@@ -32,7 +32,13 @@ const worker = {
 
     const chatID = payload && payload.chat_id;
     const text = payload && payload.text;
-    if ((typeof chatID !== "string" && typeof chatID !== "number") || typeof text !== "string" || text.length < 1 || text.length > 4096) {
+    const messageID = payload && payload.message_id;
+    const validChatID = typeof chatID === "string" || typeof chatID === "number";
+    const isSend = url.pathname === "/sendMessage";
+    const validPayload = isSend
+      ? validChatID && typeof text === "string" && text.length >= 1 && text.length <= 4096
+      : validChatID && Number.isInteger(messageID) && messageID > 0;
+    if (!validPayload) {
       return new Response(JSON.stringify({ error: "invalid_payload" }), { status: 400, headers });
     }
     if (!env.TELEGRAM_BOT_TOKEN) {
@@ -40,15 +46,16 @@ const worker = {
     }
 
     try {
-      const telegramResponse = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const telegramResponse = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}${url.pathname}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatID, text }),
+        body: JSON.stringify(isSend ? { chat_id: chatID, text } : { chat_id: chatID, message_id: messageID }),
       });
       if (!telegramResponse.ok) {
         return new Response(JSON.stringify({ error: "telegram_rejected_request" }), { status: 502, headers });
       }
-      return new Response(JSON.stringify({ ok: true }), { status: 200, headers });
+      const telegramPayload = await telegramResponse.json();
+      return new Response(JSON.stringify(telegramPayload), { status: 200, headers });
     } catch {
       return new Response(JSON.stringify({ error: "telegram_unavailable" }), { status: 502, headers });
     }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -29,28 +30,45 @@ func TestPostgresStoreIntegration(t *testing.T) {
 	}
 	defer pool.Close()
 
-	migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", "001_create_contact_submissions.sql"))
+	migrationEntries, err := os.ReadDir(filepath.Join("..", "..", "migrations"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(context, string(migration)); err != nil {
-		t.Fatal(err)
+	sort.Slice(migrationEntries, func(left, right int) bool { return migrationEntries[left].Name() < migrationEntries[right].Name() })
+	for _, entry := range migrationEntries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".sql" {
+			continue
+		}
+		migration, readErr := os.ReadFile(filepath.Join("..", "..", "migrations", entry.Name()))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if _, execErr := pool.Exec(context, string(migration)); execErr != nil {
+			t.Fatal(execErr)
+		}
 	}
-	if _, err := pool.Exec(context, "TRUNCATE contact_submissions, contact_cooldowns"); err != nil {
+	if _, err := pool.Exec(context, "TRUNCATE telegram_notification_receipts, contact_consents, contact_submissions, contact_cooldowns, telegram_subscribers"); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context, "TRUNCATE contact_submissions, contact_cooldowns")
+		_, _ = pool.Exec(context, "TRUNCATE telegram_notification_receipts, contact_consents, contact_submissions, contact_cooldowns, telegram_subscribers")
 	})
 
-	repository := NewPostgres(pool)
+	store := NewPostgres(pool)
 	now := time.Date(2026, time.September, 9, 12, 0, 0, 0, time.UTC)
 	tokenHash := []byte("test-token-hash")
-	if err := repository.CreateSubmissionAndSetCooldown(context, ContactSubmission{
-		Name:           "Анна Иванова",
-		Contact:        "anna@example.com",
-		ProjectType:    "Квартира",
-		ProjectDetails: "Нужен проект квартиры",
+	if err := store.CreateSubmissionAndSetCooldown(context, ContactSubmission{
+		Name:                  "Анна Иванова",
+		Contact:               "anna@example.com",
+		ProjectType:           "Квартира",
+		ProjectDetails:        "Нужен проект квартиры",
+		ConsentGranted:        true,
+		ConsentMethod:         ConsentMethod,
+		ConsentSourceURL:      "https://designer-svetlana.ru/#contact",
+		ConsentText:           ConsentText,
+		ConsentVersion:        ConsentVersion,
+		ConsentDocumentPath:   ConsentDocumentPath,
+		ConsentDocumentSHA256: ConsentDocumentSHA256,
 	}, tokenHash, now.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -62,17 +80,52 @@ func TestPostgresStoreIntegration(t *testing.T) {
 	if submissionCount != 1 {
 		t.Fatalf("submission count = %d, want 1", submissionCount)
 	}
-	if retryAfter, err := repository.CooldownRetryAfter(context, tokenHash, now); err != nil || retryAfter != time.Hour {
+	var consentVersion, documentPath, documentSHA256, consentMethod, consentText, sourceURL string
+	var consentGranted bool
+	if err := pool.QueryRow(context, "SELECT consent_version, document_path, document_sha256, consent_granted, consent_method, consent_text, source_url FROM contact_consents").Scan(&consentVersion, &documentPath, &documentSHA256, &consentGranted, &consentMethod, &consentText, &sourceURL); err != nil {
+		t.Fatal(err)
+	}
+	if consentVersion != ConsentVersion || documentPath != ConsentDocumentPath || documentSHA256 != ConsentDocumentSHA256 || !consentGranted || consentMethod != ConsentMethod || consentText != ConsentText || sourceURL == "" {
+		t.Fatalf("unexpected consent audit: version=%q path=%q sha=%q granted=%v method=%q text=%q source=%q", consentVersion, documentPath, documentSHA256, consentGranted, consentMethod, consentText, sourceURL)
+	}
+	if retryAfter, err := store.CooldownRetryAfter(context, tokenHash, now); err != nil || retryAfter != time.Hour {
 		t.Fatalf("retry after = %v, error = %v; want 1h and nil", retryAfter, err)
 	}
-	if retryAfter, err := repository.CooldownRetryAfter(context, tokenHash, now.Add(time.Hour)); err != nil || retryAfter != 0 {
+	if retryAfter, err := store.CooldownRetryAfter(context, tokenHash, now.Add(time.Hour)); err != nil || retryAfter != 0 {
 		t.Fatalf("expired cooldown retry after = %v, error = %v; want 0 and nil", retryAfter, err)
+	}
+	if _, err := pool.Exec(context, "INSERT INTO contact_cooldowns (token_hash, expires_at) VALUES ($1, $2)", []byte("expired-token"), now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if deleted, err := store.DeleteExpiredCooldowns(context, now); err != nil || deleted != 1 {
+		t.Fatalf("deleted cooldowns = %d, error = %v; want 1 and nil", deleted, err)
+	}
+	if err := store.RecordTelegramNotification(context, 123, 42, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	due, err := store.DueTelegramNotifications(context, now.Add(2*time.Hour), 100)
+	if err != nil || len(due) != 1 || due[0].ChatID != 123 || due[0].MessageID != 42 {
+		t.Fatalf("due notifications = %#v, error = %v", due, err)
+	}
+	if err := store.MarkTelegramNotificationDeleted(context, due[0].ID, now.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	due, err = store.DueTelegramNotifications(context, now.Add(3*time.Hour), 100)
+	if err != nil || len(due) != 0 {
+		t.Fatalf("deleted notification remained due: %#v, error = %v", due, err)
 	}
 	if _, err := pool.Exec(context, "UPDATE contact_submissions SET created_at = $1", now.AddDate(0, 0, -366)); err != nil {
 		t.Fatal(err)
 	}
-	if deleted, err := repository.DeleteSubmissionsOlderThan(context, now.AddDate(0, 0, -365)); err != nil || deleted != 1 {
+	if deleted, err := store.DeleteSubmissionsOlderThan(context, now.AddDate(0, 0, -365)); err != nil || deleted != 1 {
 		t.Fatalf("deleted = %d, error = %v; want 1 and nil", deleted, err)
+	}
+	var remainingConsents int
+	if err := pool.QueryRow(context, "SELECT count(*) FROM contact_consents").Scan(&remainingConsents); err != nil {
+		t.Fatal(err)
+	}
+	if remainingConsents != 0 {
+		t.Fatalf("remaining consent records = %d, want 0 after submission retention cleanup", remainingConsents)
 	}
 }
 
@@ -90,6 +143,9 @@ func TestPostgresStoreReturnsErrorsFromClosedPool(t *testing.T) {
 	ctx := context.Background()
 	if _, err := store.DeleteSubmissionsOlderThan(ctx, time.Now()); err == nil {
 		t.Fatal("delete must report a closed-pool error")
+	}
+	if _, err := store.DeleteExpiredCooldowns(ctx, time.Now()); err == nil {
+		t.Fatal("cooldown deletion must report a closed-pool error")
 	}
 	if err := store.CreateSubmissionAndSetCooldown(ctx, ContactSubmission{}, []byte("token"), time.Now()); err == nil {
 		t.Fatal("create must report a closed-pool error")

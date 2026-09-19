@@ -92,7 +92,19 @@ func newContactWithStoreAndRateLimit(cooldown *service.Cooldown, store repositor
 
 		projectDetails := optionalString(request.ProjectDetails)
 		if store != nil {
-			if err := store.CreateSubmissionAndSetCooldown(r.Context(), repository.ContactSubmission{Name: request.Name, Contact: request.Contact, ProjectType: request.ProjectType, ProjectDetails: projectDetails}, service.CooldownTokenHash(hmacSecret, cooldownKey), time.Now().Add(time.Hour)); err != nil {
+			if err := store.CreateSubmissionAndSetCooldown(r.Context(), repository.ContactSubmission{
+				Name:                  request.Name,
+				Contact:               request.Contact,
+				ProjectType:           request.ProjectType,
+				ProjectDetails:        projectDetails,
+				ConsentGranted:        true,
+				ConsentMethod:         repository.ConsentMethod,
+				ConsentSourceURL:      requestSourceURL(r),
+				ConsentText:           repository.ConsentText,
+				ConsentVersion:        repository.ConsentVersion,
+				ConsentDocumentPath:   repository.ConsentDocumentPath,
+				ConsentDocumentSHA256: repository.ConsentDocumentSHA256,
+			}, service.CooldownTokenHash(hmacSecret, cooldownKey), time.Now().Add(time.Hour)); err != nil {
 				writeJSONError(w, http.StatusInternalServerError, "internal_error", "Не удалось обработать форму")
 				return
 			}
@@ -112,6 +124,14 @@ func newContactWithStoreAndRateLimit(cooldown *service.Cooldown, store repositor
 		w.WriteHeader(http.StatusCreated)
 		_, _ = w.Write([]byte(`{"status":"accepted"}`))
 	}
+}
+
+func requestSourceURL(r *http.Request) string {
+	source := strings.TrimSpace(r.Referer())
+	if source == "" {
+		source = strings.TrimSpace(r.Header.Get("Origin"))
+	}
+	return string([]rune(source)[:min(len([]rune(source)), 2048)])
 }
 
 func isValidRequest(request ContactRequest) bool {

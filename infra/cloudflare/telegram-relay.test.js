@@ -25,7 +25,7 @@ describe("Telegram relay Worker", () => {
   });
 
   it("forwards only the validated notification fields", async () => {
-    const telegramFetch = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    const telegramFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), { status: 200 }));
     vi.stubGlobal("fetch", telegramFetch);
     const request = new Request("https://relay.example/sendMessage", {
       body: JSON.stringify({ chat_id: 123, ignored: "value", text: "Новая заявка" }),
@@ -40,5 +40,23 @@ describe("Telegram relay Worker", () => {
     const [url, options] = telegramFetch.mock.calls[0];
     expect(url).toBe("https://api.telegram.org/botbot-token/sendMessage");
     expect(JSON.parse(options.body)).toEqual({ chat_id: 123, text: "Новая заявка" });
+    await expect(response.json()).resolves.toEqual({ ok: true, result: { message_id: 42 } });
+  });
+
+  it("forwards validated deletion requests", async () => {
+    const telegramFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true, result: true }), { status: 200 }));
+    vi.stubGlobal("fetch", telegramFetch);
+    const request = new Request("https://relay.example/deleteMessage", {
+      body: JSON.stringify({ chat_id: 123, message_id: 42, ignored: "value" }),
+      headers: { Authorization: "Bearer relay-secret", "Content-Type": "application/json" },
+      method: "POST",
+    });
+
+    const response = await worker.fetch(request, env);
+
+    expect(response.status).toBe(200);
+    const [url, options] = telegramFetch.mock.calls[0];
+    expect(url).toBe("https://api.telegram.org/botbot-token/deleteMessage");
+    expect(JSON.parse(options.body)).toEqual({ chat_id: 123, message_id: 42 });
   });
 });

@@ -23,6 +23,18 @@ describe("ContactForm", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("links to the full consent document in a new tab", () => {
+    render(<ContactForm />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Обсудить проект" }));
+
+    const consentLink = screen.getByRole("link", { name: "Полный текст согласия (PDF)" });
+    expect(consentLink.getAttribute("href")).toBe("/documents/personal-data-consent-2026-09-19-v4.pdf");
+    expect(consentLink.getAttribute("target")).toBe("_blank");
+    expect(consentLink.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(screen.getByRole("link", { name: "Политика обработки персональных данных" }).getAttribute("href")).toBe("/privacy");
+  });
+
   it("shows cooldown after a 429 response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { headers: { "Retry-After": "3600" }, status: 429 }));
     vi.stubGlobal("fetch", fetchMock);

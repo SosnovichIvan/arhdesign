@@ -1,5 +1,12 @@
 {$CADDY_SITE:localhost}, {$TELEGRAM_WEBHOOK_HOST:bot.localhost} {
-	log
+	log {
+		output file /data/logs/access.log {
+			roll_size 10mb
+			roll_keep 30
+			roll_keep_for 720h
+		}
+		format json
+	}
 	encode zstd gzip
 
 	@api path /api/* /healthz /readyz

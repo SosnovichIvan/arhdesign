@@ -17,8 +17,14 @@ func NewCooldown(now func() time.Time) *Cooldown {
 func (c *Cooldown) RetryAfter(key string) time.Duration {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	if until := c.until[key]; until.After(c.now()) {
-		return until.Sub(c.now())
+	currentTime := c.now()
+	for storedKey, until := range c.until {
+		if !until.After(currentTime) {
+			delete(c.until, storedKey)
+		}
+	}
+	if until := c.until[key]; until.After(currentTime) {
+		return until.Sub(currentTime)
 	}
 	return 0
 }
