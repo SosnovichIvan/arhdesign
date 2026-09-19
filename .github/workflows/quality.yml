@@ -58,4 +58,5 @@ jobs:
       - run: bash scripts/check-coverage.sh
       - run: go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 --config oapi-codegen.yaml ../../openapi/contact-api.yaml
       - run: git diff --exit-code -- internal/api/generated
-      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      # v1.7.0 is the current release compatible with the project's Go 1.25 toolchain.
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
