@@ -21,8 +21,8 @@ from reportlab.platypus import (
 )
 
 
-VERSION = "2026-09-19-v4"
-OUTPUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("public/documents/personal-data-consent-2026-09-19-v4.pdf")
+VERSION = "2026-09-19-v5"
+OUTPUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("public/documents/personal-data-consent-2026-09-19-v5.pdf")
 FONT_REGULAR = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
 FONT_BOLD = Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf")
 rl_config.invariant = True
@@ -146,7 +146,7 @@ def build_document(output: Path) -> None:
             "Сокращенное наименование: <b>ИП ПОЛИСМАКОВА С. А.</b>. Организационно-правовая "
             "форма: <b>индивидуальный предприниматель</b>. ИНН: <b>682962659118</b>. "
             "ОГРНИП: <b>324508100255269</b>. Почтовый адрес: <b>142000, Московская область, "
-            "город Домодедово, Южный внутригородской район, улица Курьякова, 25, 157</b>. "
+            "город Домодедово, Южный внутригородской район, улица Курыжова, 25, 157</b>. "
             "Контактные данные оператора: <b>svetlana@polismakova.ru</b>, <b>+7 993 335-37-75</b>.",
             body,
         ),

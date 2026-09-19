@@ -87,7 +87,7 @@ describe("public portfolio UI", () => {
     cleanup();
     render(<PrivacyPage />);
     expect(screen.getByRole("heading", { name: "Политика обработки персональных данных", level: 1 })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Открыть политику в PDF" }).getAttribute("href")).toBe("/documents/personal-data-policy-2026-09-19-v1.pdf");
+    expect(screen.getByRole("link", { name: "Открыть политику в PDF" }).getAttribute("href")).toBe("/documents/personal-data-policy-2026-09-19-v2.pdf");
   });
 
   it("renders shared cards, controls and social links", () => {

@@ -12,8 +12,8 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import HRFlowable, ListFlowable, ListItem, Paragraph, SimpleDocTemplate, Spacer
 
 
-VERSION = "2026-09-19-v1"
-OUTPUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("public/documents/personal-data-policy-2026-09-19-v1.pdf")
+VERSION = "2026-09-19-v2"
+OUTPUT = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("public/documents/personal-data-policy-2026-09-19-v2.pdf")
 FONT_REGULAR = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
 FONT_BOLD = Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf")
 rl_config.invariant = True
@@ -131,7 +131,7 @@ def build_document(output: Path) -> None:
             "сайта designer-svetlana.ru. Оператор: <b>Индивидуальный предприниматель ПОЛИСМАКОВА "
             "СВЕТЛАНА АЛЕКСАНДРОВНА</b>, сокращенное наименование: <b>ИП ПОЛИСМАКОВА С. А.</b>, "
             "ИНН <b>682962659118</b>, ОГРНИП <b>324508100255269</b>. Почтовый адрес: <b>142000, "
-            "Московская область, город Домодедово, Южный внутригородской район, улица Курьякова, "
+            "Московская область, город Домодедово, Южный внутригородской район, улица Курыжова, "
             "25, 157</b>. Электронная почта: <b>svetlana@polismakova.ru</b>, телефон: "
             "<b>+7 993 335-37-75</b>.",
             body,

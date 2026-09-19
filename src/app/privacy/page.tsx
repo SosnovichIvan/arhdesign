@@ -31,7 +31,7 @@ export default function PrivacyPage() {
           <div className="mt-14 space-y-12">
             <section className={sectionClassName}>
               <h2 className={headingClassName}>1. Оператор и область действия</h2>
-              <p className={paragraphClassName}>Оператор — Индивидуальный предприниматель ПОЛИСМАКОВА СВЕТЛАНА АЛЕКСАНДРОВНА, ИНН 682962659118, ОГРНИП 324508100255269. Почтовый адрес: 142000, Московская область, город Домодедово, Южный внутригородской район, улица Курьякова, 25, 157. Электронная почта: <a className={linkClassName} href="mailto:svetlana@polismakova.ru">svetlana@polismakova.ru</a>, телефон: <a className={linkClassName} href="tel:+79933353775">+7 993 335-37-75</a>.</p>
+              <p className={paragraphClassName}>Оператор — Индивидуальный предприниматель ПОЛИСМАКОВА СВЕТЛАНА АЛЕКСАНДРОВНА, ИНН 682962659118, ОГРНИП 324508100255269. Почтовый адрес: 142000, Московская область, город Домодедово, Южный внутригородской район, улица Курыжова, 25, 157. Электронная почта: <a className={linkClassName} href="mailto:svetlana@polismakova.ru">svetlana@polismakova.ru</a>, телефон: <a className={linkClassName} href="tel:+79933353775">+7 993 335-37-75</a>.</p>
               <p className={paragraphClassName}>Политика применяется к данным посетителей, которые отправляют форму обратной связи, а также к техническим данным, обрабатываемым при использовании сайта.</p>
             </section>
 
