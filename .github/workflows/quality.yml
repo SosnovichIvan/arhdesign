@@ -9,6 +9,24 @@ permissions:
   contents: read
 
 jobs:
+  branch-policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce develop-to-main delivery path
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$BASE_REF" = "develop" ] && [ "$HEAD_REF" != "main" ] && [ "$HEAD_REF" != "develop" ]; then
+            exit 0
+          fi
+          if [ "$BASE_REF" = "main" ] && [ "$HEAD_REF" = "develop" ]; then
+            exit 0
+          fi
+          echo "Unsupported pull request path: $HEAD_REF -> $BASE_REF" >&2
+          exit 1
+
   frontend:
     runs-on: ubuntu-latest
     steps:
