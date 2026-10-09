@@ -1,136 +1,137 @@
 package handler
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
-	"github.com/SosnovichIvan/arhdesign/apps/api/internal/repository"
-	"log/slog"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
-	"sync"
-	"time"
+
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/account"
 )
 
-type dialog struct {
-	login    string
-	password bool
-	until    time.Time
+type TelegramAccountAuth interface {
+	BeginTelegramConfirmation(context.Context, int64, string) error
+	TelegramConfirmationStep(context.Context, int64) (string, error)
+	SubmitTelegramLogin(context.Context, int64, string) error
+	CompleteTelegramConfirmation(context.Context, int64, int64, string, string, string) error
 }
+
+type TelegramMessageDeleter interface {
+	DeleteMessage(context.Context, int64, int64) error
+}
+
 type TelegramWebhook struct {
-	secret, username, password string
-	store                      repository.TelegramSubscriberStore
-	dialogs                    map[int64]dialog
-	mu                         sync.Mutex
+	secret   string
+	accounts TelegramAccountAuth
+	deleter  TelegramMessageDeleter
 }
+
 type telegramUpdate struct {
-	Message *struct {
-		Text string `json:"text"`
-		Chat struct {
+	UpdateID int64 `json:"update_id"`
+	Message  *struct {
+		MessageID int64  `json:"message_id"`
+		Text      string `json:"text"`
+		Chat      struct {
 			ID   int64  `json:"id"`
 			Type string `json:"type"`
 		} `json:"chat"`
 		From struct {
-			Username string `json:"username"`
+			Username  string `json:"username"`
+			FirstName string `json:"first_name"`
 		} `json:"from"`
 	} `json:"message"`
 }
 
-func NewTelegramWebhook(secret, username, password string, store repository.TelegramSubscriberStore) *TelegramWebhook {
-	return &TelegramWebhook{secret: secret, username: username, password: password, store: store, dialogs: map[int64]dialog{}}
+func NewTelegramWebhook(secret string, accounts TelegramAccountAuth, deleter TelegramMessageDeleter) *TelegramWebhook {
+	return &TelegramWebhook{secret: secret, accounts: accounts, deleter: deleter}
 }
-func (e *TelegramWebhook) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Telegram-Bot-Api-Secret-Token")), []byte(e.secret)) != 1 {
-		w.WriteHeader(401)
+
+func (endpoint *TelegramWebhook) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	var u telegramUpdate
-	if json.NewDecoder(r.Body).Decode(&u) != nil || u.Message == nil || u.Message.Chat.Type != "private" {
-		w.WriteHeader(200)
+	if endpoint.secret == "" || subtle.ConstantTimeCompare([]byte(request.Header.Get("X-Telegram-Bot-Api-Secret-Token")), []byte(endpoint.secret)) != 1 {
+		writer.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	m := u.Message
-	text := strings.TrimSpace(m.Text)
-	slog.Info("telegram webhook received")
-	active, err := e.store.TelegramSubscriberActive(r.Context(), m.Chat.ID)
-	if err != nil {
-		w.WriteHeader(200)
+	var update telegramUpdate
+	if json.NewDecoder(request.Body).Decode(&update) != nil || update.Message == nil || update.Message.Chat.Type != "private" {
+		writer.WriteHeader(http.StatusOK)
 		return
 	}
-	if text == "/start" {
-		e.clear(m.Chat.ID)
-		e.reply(w, m.Chat.ID, active, "Здравствуйте! Это служебный бот сайта Светланы Полисмаковой — архитектора и дизайнера интерьеров.\n\nЗдесь можно получать уведомления о новых обращениях с сайта. Если вы видите это сообщение, связка сайта и Telegram работает корректно.")
-		return
-	}
-	if text == "/menu" {
-		e.clear(m.Chat.ID)
-		e.reply(w, m.Chat.ID, active, "Меню уведомлений")
-		return
-	}
-	if !active && (text == "Подписаться" || text == "/subscribe") {
-		e.set(m.Chat.ID, dialog{until: time.Now().Add(5 * time.Minute)})
-		e.send(w, m.Chat.ID, "Введите логин:")
-		return
-	}
-	if active && (text == "Отписаться" || text == "/unsubscribe") {
-		_ = e.store.DeactivateTelegramSubscriber(r.Context(), m.Chat.ID)
-		e.clear(m.Chat.ID)
-		e.reply(w, m.Chat.ID, false, "Подписка отключена.")
-		return
-	}
-	d, ok := e.get(m.Chat.ID)
-	if !ok {
-		e.reply(w, m.Chat.ID, active, "Выберите действие в меню.")
-		return
-	}
-	if !d.password {
-		d.login = text
-		d.password = true
-		e.set(m.Chat.ID, d)
-		e.send(w, m.Chat.ID, "Введите пароль:")
-		return
-	}
-	e.clear(m.Chat.ID)
-	if subtle.ConstantTimeCompare([]byte(d.login), []byte(e.username)) == 1 && subtle.ConstantTimeCompare([]byte(text), []byte(e.password)) == 1 {
-		if e.store.ActivateTelegramSubscriber(r.Context(), m.Chat.ID, m.From.Username) == nil {
-			e.reply(w, m.Chat.ID, true, "Вы подписались на новые заявки.")
-		} else {
-			e.reply(w, m.Chat.ID, false, "Не удалось включить подписку.")
+	message := update.Message
+	text := strings.TrimSpace(message.Text)
+	requestID := fmt.Sprintf("telegram-%d-%d", message.Chat.ID, message.MessageID)
+
+	if text == "/start register" || text == "/start confirm" || text == "Подтвердить профиль" || text == "/confirm" {
+		if endpoint.accounts == nil || endpoint.accounts.BeginTelegramConfirmation(request.Context(), message.Chat.ID, requestID) != nil {
+			endpoint.respond(writer, message.Chat.ID, "Не удалось начать подтверждение. Попробуйте позже.", "")
+			return
 		}
-	} else {
-		e.reply(w, m.Chat.ID, false, "Ошибка: логин или пароль не совпадают.")
+		endpoint.respond(writer, message.Chat.ID, "Введите логин, указанный при регистрации на designer-svetlana.ru:", "")
+		return
+	}
+	if text == "/start" || text == "/menu" {
+		welcome := "Добро пожаловать"
+		if firstName := telegramFirstName(message.From.FirstName); firstName != "" {
+			welcome += " " + firstName
+		}
+		endpoint.respond(writer, message.Chat.ID, welcome+"\n\nЭто бот личного кабинета Светланы Полисмаковой. Здесь можно подтвердить профиль и получать уведомления о событиях, которые относятся к вашим проектам.", "Подтвердить профиль")
+		return
+	}
+	if endpoint.accounts == nil {
+		endpoint.respond(writer, message.Chat.ID, "Сервис подтверждения временно недоступен.", "Подтвердить профиль")
+		return
+	}
+	step, err := endpoint.accounts.TelegramConfirmationStep(request.Context(), message.Chat.ID)
+	if err != nil {
+		endpoint.respond(writer, message.Chat.ID, "Сессия подтверждения не найдена или истекла. Запустите подтверждение снова.", "Подтвердить профиль")
+		return
+	}
+	switch step {
+	case "awaiting_login":
+		if err := endpoint.accounts.SubmitTelegramLogin(request.Context(), message.Chat.ID, text); err != nil {
+			endpoint.respond(writer, message.Chat.ID, "Сессия подтверждения истекла. Запустите подтверждение снова.", "Подтвердить профиль")
+			return
+		}
+		endpoint.respond(writer, message.Chat.ID, "Введите пароль. Сообщение с паролем будет удалено сразу после проверки:", "")
+	case "awaiting_password":
+		if endpoint.deleter != nil {
+			_ = endpoint.deleter.DeleteMessage(request.Context(), message.Chat.ID, message.MessageID)
+		}
+		err := endpoint.accounts.CompleteTelegramConfirmation(request.Context(), message.Chat.ID, message.MessageID, message.From.Username, text, requestID)
+		if err == nil {
+			endpoint.respond(writer, message.Chat.ID, "Профиль подтверждён. Telegram подключён к вашей учётной записи.", "")
+			return
+		}
+		var limited account.RateLimitError
+		if errors.As(err, &limited) {
+			endpoint.respond(writer, message.Chat.ID, "Слишком много попыток. Повторите позже.", "Подтвердить профиль")
+			return
+		}
+		endpoint.respond(writer, message.Chat.ID, "Не удалось подтвердить профиль. Проверьте логин и пароль и начните заново.", "Подтвердить профиль")
+	default:
+		endpoint.respond(writer, message.Chat.ID, "Сессия подтверждения недоступна. Запустите подтверждение снова.", "Подтвердить профиль")
 	}
 }
-func (e *TelegramWebhook) send(w http.ResponseWriter, id int64, text string) {
-	e.respond(w, id, text, "")
-}
-func (e *TelegramWebhook) reply(w http.ResponseWriter, id int64, active bool, text string) {
-	action := "Подписаться"
-	if active {
-		action = "Отписаться"
+
+func telegramFirstName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len([]rune(value)) > 64 || strings.ContainsAny(value, "\r\n\t") {
+		return ""
 	}
-	e.respond(w, id, text+"\n\nДоступно: "+action, action)
+	return value
 }
-func (e *TelegramWebhook) respond(w http.ResponseWriter, id int64, text, action string) {
-	payload := map[string]any{"method": "sendMessage", "chat_id": id, "text": text}
+
+func (endpoint *TelegramWebhook) respond(writer http.ResponseWriter, chatID int64, text, action string) {
+	payload := map[string]any{"method": "sendMessage", "chat_id": chatID, "text": text}
 	if action != "" {
 		payload["reply_markup"] = map[string]any{"keyboard": [][]string{{action}}, "resize_keyboard": true, "is_persistent": true}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(payload)
-}
-func (e *TelegramWebhook) set(id int64, d dialog) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.dialogs[id] = d
-}
-func (e *TelegramWebhook) clear(id int64) { e.mu.Lock(); defer e.mu.Unlock(); delete(e.dialogs, id) }
-func (e *TelegramWebhook) get(id int64) (dialog, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	d, ok := e.dialogs[id]
-	if !ok || !d.until.After(time.Now()) {
-		delete(e.dialogs, id)
-		return dialog{}, false
-	}
-	return d, true
+	writer.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(writer).Encode(payload)
 }

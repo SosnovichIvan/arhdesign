@@ -9,6 +9,24 @@ permissions:
   contents: read
 
 jobs:
+  branch-policy:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce develop-to-main delivery path
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$BASE_REF" = "develop" ] && [ "$HEAD_REF" != "main" ] && [ "$HEAD_REF" != "develop" ]; then
+            exit 0
+          fi
+          if [ "$BASE_REF" = "main" ] && [ "$HEAD_REF" = "develop" ]; then
+            exit 0
+          fi
+          echo "Unsupported pull request path: $HEAD_REF -> $BASE_REF" >&2
+          exit 1
+
   frontend:
     runs-on: ubuntu-latest
     steps:
@@ -21,8 +39,21 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm run test:coverage
+      - run: npm run validate:frontend-adapter
+      - run: npm run lint:openapi
       - run: npm run build
+      - run: npm run test:coverage
+      - run: npm run test:ui
+      - name: Upload Cypress QA report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cypress-qa-report
+          path: |
+            reports/cypress
+            cypress/screenshots
+          if-no-files-found: warn
+          retention-days: 14
       - run: npm run test:e2e
       - run: npm audit --omit=dev --audit-level=high
 
@@ -49,14 +80,19 @@ jobs:
       TEST_DATABASE_URL: postgres://arhdesign:test-password@localhost:5432/arhdesign_test?sslmode=disable
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+        working-directory: .
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.9"
           cache-dependency-path: apps/api/go.sum
-      - run: go vet ./...
+      - run: bash ../../scripts/validate-adapters.sh api
       - run: go test -race -count=1 ./...
-      - run: bash scripts/check-coverage.sh
-      - run: go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.0 --config oapi-codegen.yaml ../../openapi/contact-api.yaml
-      - run: git diff --exit-code -- internal/api/generated
-      # v1.7.0 is the current release compatible with the project's Go 1.25 toolchain.
+      - run: make test-coverage
+      # Pin the scanner so CI and release evidence use the same vulnerability database client.
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...

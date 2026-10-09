@@ -3,6 +3,7 @@ import { ContactFormProvider, ContactFormTrigger } from "@/features/contactForm"
 import { ProjectCard } from "@/shared/components/projectCard";
 import { ProjectCarousel } from "@/shared/components/projectCarousel";
 import { SiteFooter } from "@/shared/components/siteFooter";
+import { HomeScrollReset } from "@/shared/components/homeScrollReset/homeScrollReset";
 import { projects } from "@/shared/config";
 import { Container, Typography } from "@/shared/ui";
 
@@ -10,6 +11,7 @@ const heroImages = projects.flatMap((project) => project.images);
 
 export default function HomePage() {
   return <ContactFormProvider>
+    <HomeScrollReset />
     <main>
       <section className="py-16 tablet:py-24 desktop:py-32">
         <Container className="desktop:grid desktop:grid-cols-2 desktop:items-center desktop:gap-16">

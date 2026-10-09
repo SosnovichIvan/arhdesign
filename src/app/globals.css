@@ -14,9 +14,26 @@
   --color-action-hover: #495442;
   --color-focus: #6f7868;
   --color-field-focus: #4263c7;
+  --color-danger: #a43d35;
+  --color-overlay: rgb(21 24 21 / 78%);
+  --color-icon-button-bg: #ffffff;
+  --color-icon-button-fg: #1e211f;
+  --color-icon-button-hover: #f4f1ea;
+  --color-icon-button-border: #d7d3ca;
   --shadow-surface: 0 12px 40px rgb(30 33 31 / 10%);
   --font-display: "Cormorant Garamond", Georgia, serif;
   --font-ui: "Manrope", Arial, sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 :root[data-theme="dark"] {
@@ -33,6 +50,12 @@
   --color-action-hover: #d2dcc9;
   --color-focus: #d2dcc9;
   --color-field-focus: #91a8ff;
+  --color-danger: #f0a39c;
+  --color-overlay: rgb(5 7 5 / 86%);
+  --color-icon-button-bg: #252824;
+  --color-icon-button-fg: #f4f1ea;
+  --color-icon-button-hover: #30342f;
+  --color-icon-button-border: #4a4e47;
   --shadow-surface: 0 16px 48px rgb(0 0 0 / 35%);
 }
 
@@ -50,6 +73,12 @@
   --color-action-hover: var(--color-action-hover);
   --color-focus: var(--color-focus);
   --color-field-focus: var(--color-field-focus);
+  --color-danger: var(--color-danger);
+  --color-overlay: var(--color-overlay);
+  --color-icon-button: var(--color-icon-button-bg);
+  --color-icon-button-text: var(--color-icon-button-fg);
+  --color-icon-button-hover: var(--color-icon-button-hover);
+  --color-icon-button-border: var(--color-icon-button-border);
   --font-display: var(--font-display);
   --font-ui: var(--font-ui);
   --shadow-surface: var(--shadow-surface);

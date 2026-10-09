@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/account"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -193,5 +194,29 @@ func TestPostgresStoreReturnsErrorsFromClosedPool(t *testing.T) {
 	}
 	if err := store.MarkTelegramNotificationDeleted(ctx, 1, time.Now()); err == nil {
 		t.Fatal("notification marking must report a closed-pool error")
+	}
+	if err := store.CreatePendingAccount(ctx, account.PendingAccount{PasswordParameters: map[string]any{}}); err == nil {
+		t.Fatal("account creation must report a closed-pool error")
+	}
+	if err := store.ConsumeVerificationToken(ctx, []byte("token"), 1, time.Now(), "request-closed"); err == nil {
+		t.Fatal("verification consume must report a closed-pool error")
+	}
+	if _, _, err := store.PendingAccountEmail(ctx, "absent"); err == nil {
+		t.Fatal("pending account lookup must report a closed-pool error")
+	}
+	if _, err := store.ReplaceVerificationToken(ctx, account.ReplacementVerification{}); err == nil {
+		t.Fatal("verification replacement must report a closed-pool error")
+	}
+	if _, _, err := store.ClaimEmailOutbox(ctx, time.Now()); err == nil {
+		t.Fatal("outbox claim must report a closed-pool error")
+	}
+	if _, err := store.RecoverStaleEmailOutbox(ctx, time.Now(), time.Now()); err == nil {
+		t.Fatal("outbox recovery must report a closed-pool error")
+	}
+	if err := store.MarkEmailOutboxDelivered(ctx, "00000000-0000-0000-0000-000000000000", time.Now()); err == nil {
+		t.Fatal("outbox delivery marking must report a closed-pool error")
+	}
+	if err := store.MarkEmailOutboxFailed(ctx, "00000000-0000-0000-0000-000000000000", 1, 5, time.Now(), time.Now(), "failed"); err == nil {
+		t.Fatal("outbox failure marking must report a closed-pool error")
 	}
 }

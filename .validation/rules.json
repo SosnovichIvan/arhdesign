@@ -1,0 +1,39 @@
+{
+  "backend": {
+    "contract_adapter": "openapi/contact-api.yaml",
+    "roots": [
+      "apps/api"
+    ],
+    "sql_adapter": "postgresql"
+  },
+  "coverage": {
+    "lines": 90,
+    "branches": 90,
+    "changed_lines": 90
+  },
+  "frontend": {
+    "filename": "kebab-case",
+    "forbidden_tokens": [
+      "eval(",
+      "dangerouslySetInnerHTML"
+    ],
+    "roots": [
+      "src"
+    ]
+  },
+  "tests": {
+    "suffixes": [
+      ".test.ts",
+      ".test.tsx",
+      ".spec.ts",
+      ".spec.tsx",
+      "_test.go"
+    ]
+  },
+  "validators": [
+    "test",
+    "frontend",
+    "backend"
+  ],
+  "version": 1
+}

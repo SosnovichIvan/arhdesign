@@ -10,6 +10,8 @@
 	encode zstd gzip
 
 	@api path /api/* /healthz /readyz
-	reverse_proxy @api api:8080
+	reverse_proxy @api api:8080 {
+		header_up X-Arhdesign-Client-IP {remote_host}
+	}
 	reverse_proxy web:3000
 }
