@@ -1,4 +1,9 @@
 "use client";
-import { useState } from "react";
 import { IconButton } from "@/shared/ui";
-export function ThemeToggle() { const [dark,setDark]=useState(false); return <IconButton aria-label={dark?"Включить светлую тему":"Включить тёмную тему"} onClick={()=>{const next=!dark;setDark(next);document.documentElement.dataset.theme=next?"dark":"light";}}>{dark?"☀":"◐"}</IconButton>; }
+import { useThemePreference } from "../model/themePreferenceProvider";
+
+export function ThemeToggle() {
+  const { isPending, setTheme, theme } = useThemePreference();
+  const dark = theme === "dark";
+  return <IconButton aria-label={dark ? "Включить светлую тему" : "Включить тёмную тему"} disabled={isPending} onClick={() => void setTheme(dark ? "light" : "dark").catch(() => undefined)}>{dark ? "☀" : "◐"}</IconButton>;
+}

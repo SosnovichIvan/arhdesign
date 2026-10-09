@@ -1,0 +1,162 @@
+{
+  "schema_version": 2,
+  "installer_version": "1.0.0",
+  "agent_adapter": "codex",
+  "skills": {
+    "execution-state": {
+      "name": "Execution State",
+      "description": "Ведёт компактное состояние длинной агентной задачи и уменьшает повторную передачу истории.",
+      "options": [],
+      "option_names": [],
+      "version": "1.0.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "8a25b8179193fd34f4104363df6e75ac1f67f5f1f62ec1cabd1da30d8cbc68b5"
+    },
+    "ui-ux-design": {
+      "name": "UI/UX Design",
+      "description": "Локальный поиск и применение UI/UX-рекомендаций: visual direction, design systems, accessibility, interaction, responsive layout, typography, color и charts.",
+      "options": [],
+      "option_names": [],
+      "version": "0.2.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "0908771c37f1b30fe3c1f27f7344cdf80e86844dac7a69ee586b28352764a5c7"
+    },
+    "frontend-engineering": {
+      "name": "Frontend Engineering",
+      "description": "Реализация frontend-сценариев с архитектурой, доступностью, API и проверками выбранного стека.",
+      "options": [
+        "typescript",
+        "react",
+        "nextjs",
+        "structure-flexible"
+      ],
+      "option_names": [
+        "TypeScript",
+        "React",
+        "Next.js",
+        "Flexible logic-based"
+      ],
+      "version": "0.1.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "8ed4bf296566d3f12fdfa434e09e4a70b00dbc961e37e52b5c91f07453543e90"
+    },
+    "backend-engineering": {
+      "name": "Backend Engineering",
+      "description": "Реализация API, domain logic, persistence, безопасности и эксплуатации backend-сервисов.",
+      "options": [
+        "go"
+      ],
+      "option_names": [
+        "Go"
+      ],
+      "version": "0.1.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "04752587f03ad1871ce94c2a167152889f31c2b4a38eadd9d103133313b0048c"
+    },
+    "database-engineering": {
+      "name": "Database Engineering",
+      "description": "Схемы, SQL, индексы, миграции и backfill реляционных БД.",
+      "options": [
+        "postgresql"
+      ],
+      "option_names": [
+        "PostgreSQL"
+      ],
+      "version": "0.1.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "2522c3ed2e052fa5e8dcb0069f4250847d5fa99d4fc68e08db2c1f7df0b1aee9"
+    },
+    "project-architecture": {
+      "name": "Project Architecture",
+      "description": "Границы системы, контракты, ADR и план реализации/перехода.",
+      "options": [],
+      "option_names": [],
+      "version": "0.1.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "c77a9a4eb08c4ab95a66840366a3385df79aa0eeb66f0a61eafbcf2b5d1e4333"
+    },
+    "frontend-review": {
+      "name": "Frontend Review",
+      "description": "Ревью frontend-кода с доказательствами функциональных регрессий.",
+      "options": [],
+      "option_names": [],
+      "version": "0.1.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "42bb8dafe1ece578216ea66de2668e685d4f604414ca1b45fcd4577619c1d02e"
+    },
+    "backend-review": {
+      "name": "Backend Review",
+      "description": "Ревью контрактов, авторизации, конкурентности и отказов сервисов.",
+      "options": [],
+      "option_names": [],
+      "version": "0.1.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "118fffa13e18268bc414801b88d99811c67657f2d3f9eb1761a3e8015fdc0e56"
+    },
+    "database-review": {
+      "name": "Database Review",
+      "description": "Ревью SQL, миграций, изоляции данных и совместимости rollout.",
+      "options": [
+        "postgresql"
+      ],
+      "option_names": [
+        "PostgreSQL"
+      ],
+      "version": "0.1.0",
+      "required_by": [],
+      "installed_at": "2026-09-21T15:47:23.541604+00:00",
+      "content_sha256": "821976d697c75461e5a1407fc472e8e2702b5f4c3b96d81377bec330c7f4da2b"
+    }
+  },
+  "policies": {
+    "execution-state": {
+      "scope": "all_tasks",
+      "routing": "adaptive",
+      "enforcement": "instructions",
+      "failure_mode": "report",
+      "skill_path": ".agents/skills/execution-state/SKILL.md"
+    },
+    "project-rules": {
+      "approved_at": "2026-09-21T15:47:23.546370+00:00",
+      "consent": "cli",
+      "rules": {
+        "ui-ux-design": {
+          "source": "skills/ui-ux-design/references/project-rules.md",
+          "sha256": "797a5b40011d3f6a6918e8e70c0fcfaee5e5fec59e74e4389d616fab6e5e1dfd"
+        },
+        "backend-engineering": {
+          "source": "skills/backend-engineering/references/project-rules.md",
+          "sha256": "2ad42dd14ec2ae4fe0c44d6681aaf3a0250992b9cc68b04ab293581071fedb3e"
+        },
+        "database-engineering": {
+          "source": "skills/database-engineering/references/project-rules.md",
+          "sha256": "71cfd33dc4db519f4f016544d3c90708e19b0704a90aa0434990ef573cc3600f"
+        },
+        "project-architecture": {
+          "source": "skills/project-architecture/references/project-rules.md",
+          "sha256": "59856f05c7f359a1816e3640ecd595ff117aab225cf85fd456479240f4433783"
+        },
+        "backend-review": {
+          "source": "skills/backend-review/references/project-rules.md",
+          "sha256": "596a65683974b6434d913f151d3b3f7e1b8e959dbf896a8c461e45fd6d7a0fc1"
+        },
+        "database-review": {
+          "source": "skills/database-review/references/project-rules.md",
+          "sha256": "892bc366bb33af7486bdf3afe38863f42be36ee591016679b73ad0989432c8d9"
+        },
+        "delivery": {
+          "source": "agents/rules/delivery.md",
+          "sha256": "f9dc1940a7caa8f6c80c4ac22b53a5dbbbdd091897f045afee877c82c320b14a"
+        }
+      }
+    }
+  }
+}

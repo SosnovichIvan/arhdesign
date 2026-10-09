@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "execution_state": {
+    "scope": "all_tasks",
+    "routing": "adaptive",
+    "enforcement": "instructions",
+    "failure_mode": "report",
+    "skill_path": ".agents/skills/execution-state/SKILL.md"
+  }
+}

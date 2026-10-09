@@ -1,0 +1,5 @@
+interface:
+  display_name: "Выполнение через состояние"
+  short_description: "CLI-neutral state и смена контекста для долгих задач"
+policy:
+  allow_implicit_invocation: false

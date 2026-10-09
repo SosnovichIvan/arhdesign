@@ -1,0 +1,62 @@
+services:
+  postgres-backup:
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      ALLOW_LOCAL_RESTIC_REPOSITORY: "true"
+      BACKUP_HOST_ID: local-restore-drill
+      BACKUP_RUN_ONCE: "true"
+      OFFSITE_BACKUP_ENABLED: "true"
+      RESTIC_PASSWORD: local-restore-drill-password
+      RESTIC_REPOSITORY: /offsite
+    restart: "no"
+    volumes:
+      - restic_drill_repository:/offsite
+
+  restore-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}_restore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}_restore"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    networks:
+      - private
+    restart: "no"
+    volumes:
+      - restore_drill_data:/var/lib/postgresql/data
+
+  backup-drill:
+    image: arhdesign-postgres-backup:${RELEASE_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: backup/Dockerfile
+    depends_on:
+      postgres-backup:
+        condition: service_completed_successfully
+      restore-postgres:
+        condition: service_healthy
+    environment:
+      BACKUP_HOST_ID: local-restore-drill
+      RESTIC_PASSWORD: local-restore-drill-password
+      RESTIC_REPOSITORY: /offsite
+      RESTORE_ACKNOWLEDGE_ISOLATED_TARGET: "yes"
+      RESTORE_DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@restore-postgres:5432/${POSTGRES_DB}_restore?sslmode=disable
+      RESTORE_MAX_RPO_SECONDS: "86400"
+      RESTORE_MAX_RTO_SECONDS: "14400"
+      RESTORE_MINIMUM_TABLE_COUNT: "10"
+    command: ["/usr/local/bin/restore-drill"]
+    networks:
+      - private
+    restart: "no"
+    volumes:
+      - restic_drill_repository:/offsite
+
+volumes:
+  restic_drill_repository:
+  restore_drill_data:

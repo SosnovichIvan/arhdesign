@@ -7,6 +7,9 @@ x-logging: &default-logging
 services:
   caddy:
     image: caddy:2.10-alpine
+    cpus: "0.50"
+    mem_limit: 256m
+    pids_limit: 128
     depends_on:
       api:
         condition: service_healthy
@@ -31,6 +34,9 @@ services:
 
   web:
     image: arhdesign-web:${RELEASE_IMAGE_TAG:-latest}
+    cpus: "1.50"
+    mem_limit: 2g
+    pids_limit: 256
     build:
       args:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
@@ -49,6 +55,9 @@ services:
 
   api:
     image: arhdesign-api:${RELEASE_IMAGE_TAG:-latest}
+    cpus: "1.50"
+    mem_limit: 1g
+    pids_limit: 256
     build:
       context: ../apps/api
       dockerfile: Dockerfile
@@ -59,13 +68,32 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       COOLDOWN_HMAC_SECRET: ${COOLDOWN_HMAC_SECRET}
       CONTACT_RETENTION_DAYS: ${CONTACT_RETENTION_DAYS:-365}
+      ACCOUNT_AUTH_ENABLED: ${ACCOUNT_AUTH_ENABLED:-false}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      ACCOUNT_TOKEN_HMAC_SECRET: ${ACCOUNT_TOKEN_HMAC_SECRET:-}
+      ACCOUNT_TOKEN_HMAC_KEY_VERSION: ${ACCOUNT_TOKEN_HMAC_KEY_VERSION:-1}
+      OUTBOX_ENCRYPTION_KEY: ${OUTBOX_ENCRYPTION_KEY:-}
+      OUTBOX_ENCRYPTION_KEY_VERSION: ${OUTBOX_ENCRYPTION_KEY_VERSION:-1}
+      SMTP_ADDRESS: ${SMTP_ADDRESS:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_TO: ${EMAIL_TO:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
       TELEGRAM_RELAY_URL: ${TELEGRAM_RELAY_URL:-}
       TELEGRAM_RELAY_SECRET: ${TELEGRAM_RELAY_SECRET:-}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
       TELEGRAM_NOTIFICATION_RETENTION_HOURS: ${TELEGRAM_NOTIFICATION_RETENTION_HOURS:-24}
+      MONITORING_TIMEZONE: ${MONITORING_TIMEZONE:-Europe/Moscow}
+      MONITORING_REPORT_HOUR: ${MONITORING_REPORT_HOUR:-9}
+      MONITORING_BACKUP_DIRECTORY: ${MONITORING_BACKUP_DIRECTORY-}
+      RELEASE_VERSION: ${RELEASE_VERSION:-local}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      TECH_ADMIN_USERNAME: ${TECH_ADMIN_USERNAME:-}
+      TECH_ADMIN_EMAIL: ${TECH_ADMIN_EMAIL:-}
+      TECH_ADMIN_PASSWORD: ${TECH_ADMIN_PASSWORD:-}
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/readyz || exit 1"]
       interval: 15s
@@ -77,9 +105,14 @@ services:
       - private
     logging: *default-logging
     restart: unless-stopped
+    volumes:
+      - postgres_backups:/var/lib/arhdesign-backups:ro
 
   migrate:
     image: postgres:17-alpine
+    cpus: "0.50"
+    mem_limit: 512m
+    pids_limit: 128
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,6 +131,11 @@ services:
 
   postgres:
     image: postgres:17-alpine
+    cpus: "2.00"
+    mem_limit: 4g
+    pids_limit: 256
+    shm_size: 256m
+    command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-80}", "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -115,21 +153,37 @@ services:
       - postgres_data:/var/lib/postgresql/data
 
   postgres-backup:
-    image: postgres:17-alpine
+    image: arhdesign-postgres-backup:${RELEASE_IMAGE_TAG:-latest}
+    cpus: "0.75"
+    mem_limit: 768m
+    pids_limit: 128
+    build:
+      context: .
+      dockerfile: backup/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-30}
+      AWS_ACCESS_KEY_ID: ${BACKUP_AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${BACKUP_AWS_SECRET_ACCESS_KEY:-}
+      BACKUP_CHECK_SUBSET: ${BACKUP_CHECK_SUBSET:-1/30}
+      BACKUP_HOST_ID: ${BACKUP_HOST_ID:-arhdesign-production}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_LOCAL_RETENTION_DAYS: ${BACKUP_LOCAL_RETENTION_DAYS:-7}
+      BACKUP_REMOTE_DAILY_RETENTION: ${BACKUP_REMOTE_DAILY_RETENTION:-30}
+      BACKUP_REMOTE_MONTHLY_RETENTION: ${BACKUP_REMOTE_MONTHLY_RETENTION:-12}
+      OFFSITE_BACKUP_ENABLED: ${OFFSITE_BACKUP_ENABLED:-false}
       PGDATABASE: ${POSTGRES_DB}
       PGHOST: postgres
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGUSER: ${POSTGRES_USER}
-    command: ["/bin/sh", "/scripts/backup-postgres.sh"]
+      RESTIC_PASSWORD: ${BACKUP_RESTIC_PASSWORD:-}
+      RESTIC_REPOSITORY: ${BACKUP_RESTIC_REPOSITORY:-}
+    command: ["/usr/local/bin/backup-postgres"]
     volumes:
-      - ./scripts/backup-postgres.sh:/scripts/backup-postgres.sh:ro
       - postgres_backups:/backups
     networks:
+      - public
       - private
     logging: *default-logging
     restart: unless-stopped

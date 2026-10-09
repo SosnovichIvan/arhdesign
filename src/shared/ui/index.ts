@@ -1,8 +1,12 @@
+export { Autocomplete, type AutocompleteOption } from "./autocomplete";
 export { Button } from "./button";
 export { CarouselControl } from "./carouselControl";
 export { Container } from "./container";
+export { DatePicker } from "./datePicker";
 export { Dialog } from "./dialog";
 export { IconButton } from "./iconButton";
 export { Input } from "./input";
+export { PasswordInput } from "./passwordInput";
+export { Select, type SelectOption } from "./select";
 export { Textarea } from "./textarea";
 export { Typography } from "./typography";

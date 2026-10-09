@@ -1,0 +1,38 @@
+package repository
+
+import (
+	"testing"
+
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/project"
+)
+
+func TestAccountNotificationPresentationCatalog(t *testing.T) {
+	projectID := "00000000-0000-0000-0000-000000000001"
+	chatID := "00000000-0000-0000-0000-000000000002"
+	tests := []struct {
+		messageType string
+		entityID    string
+		title       string
+		href        string
+	}{
+		{"project.task.assigned", "", "Изменение задачи", "/account/projects/" + projectID + "/tasks"},
+		{"project.meeting.created", "", "Изменение встречи", "/account/projects/" + projectID + "/calendar"},
+		{"project.material.updated", "", "Изменение материала", "/account/projects/" + projectID + "/materials"},
+		{"project.expense.created", "", "Изменение финансов", "/account/projects/" + projectID + "/finances"},
+		{"project.document.uploaded", "", "Изменение документации", "/account/projects/" + projectID + "/documents"},
+		{"project.chat.created", chatID, "Изменение чата", "/account/projects/" + projectID + "/chat/" + chatID},
+		{"project.chat.message_created", chatID, "Новое сообщение", "/account/projects/" + projectID + "/chat/" + chatID},
+	}
+	for _, test := range tests {
+		t.Run(test.messageType, func(t *testing.T) {
+			notification := &project.EventNotification{MessageType: test.messageType, Plaintext: "Описание события"}
+			title, body := accountNotificationCopy(notification)
+			if title != test.title || body != "Описание события" {
+				t.Fatalf("title=%q body=%q", title, body)
+			}
+			if href := accountNotificationHref(projectID, test.entityID, test.messageType); href != test.href {
+				t.Fatalf("href=%q want=%q", href, test.href)
+			}
+		})
+	}
+}

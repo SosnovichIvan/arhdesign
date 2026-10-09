@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "adapters": [
+    {
+      "id": "frontend-vitest-v8",
+      "scope": "src",
+      "command": "npm run validate:frontend-adapter",
+      "rules": [
+        "ESLint passes",
+        "TypeScript typecheck passes",
+        "Vitest V8 coverage meets configured 90% thresholds"
+      ]
+    },
+    {
+      "id": "openapi-go-codegen",
+      "scope": "openapi/contact-api.yaml -> apps/api/internal/api/generated; openapi/account-api.yaml contract parsing",
+      "command": "npm run validate:openapi-adapter",
+      "rules": [
+        "both OpenAPI contracts pass Redocly lint",
+        "contact Go bindings regenerate with oapi-codegen 2.5.0",
+        "generated contact bindings have no uncommitted drift",
+        "R1 account contract parses and generates Go types without changing the active server interface"
+      ]
+    },
+    {
+      "id": "postgresql-migrations",
+      "scope": "apps/api/migrations",
+      "command": "npm run validate:postgres-adapter",
+      "rules": [
+        "requires TEST_DATABASE_URL for an isolated database whose name contains test",
+        "all migrations apply through the PostgreSQL integration test",
+        "repository behavior runs on PostgreSQL rather than SQLite"
+      ]
+    },
+    {
+      "id": "go-api-quality",
+      "scope": "apps/api",
+      "command": "npm run validate:api-adapter",
+      "rules": [
+        "go vet passes",
+        "race-enabled Go tests pass",
+        "backend coverage script enforces 90%",
+        "includes PostgreSQL and OpenAPI adapters"
+      ]
+    }
+  ]
+}
