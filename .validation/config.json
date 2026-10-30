@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "agents": [
+    "test",
+    "frontend",
+    "backend"
+  ],
+  "context_file": ".validation/project-context.json",
+  "context_sha256": "d0d048aad6c4057107982b379657aafc010407877fe8a5bb15c97544a81a7b23",
+  "context_approved": true,
+  "frontend_roots": [
+    "src"
+  ],
+  "backend_roots": [
+    "apps/api"
+  ],
+  "test_suffixes": [
+    ".test.ts",
+    ".test.tsx",
+    ".spec.ts",
+    ".spec.tsx",
+    "_test.go"
+  ],
+  "forbidden_apis": [
+    "eval(",
+    "dangerouslySetInnerHTML"
+  ],
+  "coverage": {
+    "lines": 90,
+    "branches": 90,
+    "changed_lines": 90
+  }
+}

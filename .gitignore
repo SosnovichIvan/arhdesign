@@ -1,4 +1,6 @@
 .execution-state/
+.agent-skills-lab/runtime/
+.agent-skills-lab/backups/
 .next/
 node_modules/
 coverage/
@@ -7,4 +9,6 @@ tsconfig.tsbuildinfo
 !.env.example
 .DS_Store
 test-results/
-.execution-state/
+cypress/screenshots/
+cypress/videos/
+reports/

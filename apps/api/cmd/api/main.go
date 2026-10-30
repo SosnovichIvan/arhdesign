@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,12 +10,19 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/account"
+	accountgenerated "github.com/SosnovichIvan/arhdesign/apps/api/internal/accountapi/generated"
 	generated "github.com/SosnovichIvan/arhdesign/apps/api/internal/api/generated"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/config"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/globalchat"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/handler"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/monitoring"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/notification"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/preferences"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/project"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/repository"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/service"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/technicalsupport"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -22,6 +30,11 @@ func main() {
 	configuration, err := config.FromEnvironment()
 	if err != nil {
 		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+	telegramHTTPClient, err := notification.NewTelegramHTTPClient(configuration.TelegramProxyURL)
+	if err != nil {
+		slog.Error("Telegram transport initialization failed", "error_class", "telegram_proxy_config")
 		os.Exit(1)
 	}
 	mux := http.NewServeMux()
@@ -36,10 +49,102 @@ func main() {
 		defer pool.Close()
 		retentionStore = repository.NewPostgres(pool)
 	}
-	notifier := notification.NewDispatcher(slog.Default(), 10*time.Second, configuredNotifiers(configuration, retentionStore)...)
+	notifier := notification.NewDispatcher(slog.Default(), 10*time.Second, configuredNotifiers(configuration, retentionStore, telegramHTTPClient)...)
 	contactEndpoint := handler.NewContactEndpoint(cooldown, retentionStore, []byte(configuration.CooldownHMACSecret), service.NewRateLimiter(time.Now, time.Minute), notifier)
+	var emailOutbox *notification.EmailOutbox
+	var telegramAccountOutbox *notification.TelegramAccountOutbox
+	var telegramPoller *notification.TelegramPoller
+	var accountService *account.Service
+	var technicalService *technicalsupport.Service
+	var monitoringService *monitoring.Service
+	var accountCipher account.PayloadCipher
+	if configuration.AccountEnabled {
+		tokens, err := account.NewTokenManager([]byte(configuration.AccountTokenHMACSecret), configuration.AccountTokenHMACKeyVersion)
+		if err != nil {
+			slog.Error("invalid account token configuration", "error", err)
+			os.Exit(1)
+		}
+		cipher, err := account.NewPayloadCipher(configuration.OutboxEncryptionKey, configuration.OutboxEncryptionKeyVersion)
+		if err != nil {
+			slog.Error("invalid outbox encryption configuration", "error", err)
+			os.Exit(1)
+		}
+		accountCipher = cipher
+		monitoringService, err = monitoring.NewService(retentionStore, monitoring.NewRuntimeCollector(configuration.MonitoringBackupDirectory), cipher, time.Now, configuration.MonitoringTimezone, configuration.MonitoringReportHour, configuration.ReleaseVersion)
+		if err != nil {
+			slog.Error("monitoring service initialization failed", "error", err)
+			os.Exit(1)
+		}
+		accountService, err = account.NewService(retentionStore, tokens, cipher, configuration.PublicOrigin, configuration.EmailFrom, time.Now)
+		if err != nil {
+			slog.Error("account service initialization failed", "error", err)
+			os.Exit(1)
+		}
+		accountService.ConfigureBootstrap(configuration.AdminUsername, configuration.AdminPassword)
+		accountService.ConfigureTelegramBot(configuration.TelegramBotUsername)
+		if _, _, err = accountService.EnsureTechnicalAdmin(context.Background(), configuration.TechnicalAdminUsername, configuration.TechnicalAdminEmail, configuration.TechnicalAdminPassword); err != nil {
+			slog.Error("technical administrator bootstrap failed", "error_class", "technical_admin_bootstrap")
+			os.Exit(1)
+		}
+		accountEndpoint, err := handler.NewAccountEndpoint(accountService)
+		if err != nil {
+			slog.Error("account endpoint initialization failed", "error", err)
+			os.Exit(1)
+		}
+		projectService, err := project.NewService(retentionStore, []byte(configuration.AccountTokenHMACSecret), time.Now)
+		if err != nil {
+			slog.Error("project service initialization failed", "error", err)
+			os.Exit(1)
+		}
+		if err = projectService.ConfigureNotifications(cipher); err != nil {
+			slog.Error("project notification configuration failed", "error", err)
+			os.Exit(1)
+		}
+		accountEndpoint.ConfigureProjects(projectService)
+		preferencesService, err := preferences.NewService(retentionStore)
+		if err != nil {
+			slog.Error("settings service initialization failed", "error", err)
+			os.Exit(1)
+		}
+		accountEndpoint.ConfigurePreferences(preferencesService)
+		globalChatService, err := globalchat.NewService(retentionStore, []byte(configuration.AccountTokenHMACSecret), cipher, time.Now)
+		if err != nil {
+			slog.Error("global chat service initialization failed", "error", err)
+			os.Exit(1)
+		}
+		accountEndpoint.ConfigureGlobalChats(globalChatService)
+		technicalService, err = technicalsupport.NewService(retentionStore, cipher, []byte(configuration.AccountTokenHMACSecret), configuration.AccountTokenHMACKeyVersion, time.Now)
+		if err != nil {
+			slog.Error("technical support service initialization failed", "error", err)
+			os.Exit(1)
+		}
+		accountEndpoint.ConfigureTechnicalSupport(technicalService)
+		accountgenerated.HandlerWithOptions(accountEndpoint, accountgenerated.StdHTTPServerOptions{BaseURL: "/api", BaseRouter: mux})
+		emailOutbox, err = notification.NewEmailOutbox(retentionStore, cipher, notification.NewSMTPTransport(configuration.SMTPAddress, configuration.SMTPUsername, configuration.SMTPPassword), slog.Default(), time.Now)
+		if err != nil {
+			slog.Error("email outbox initialization failed", "error", err)
+			os.Exit(1)
+		}
+	}
 	if configuration.TelegramBotToken != "" && retentionStore != nil {
-		mux.Handle("POST /api/telegram/webhook", handler.NewTelegramWebhook(configuration.TelegramWebhookSecret, configuration.AdminUsername, configuration.AdminPassword, retentionStore))
+		telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", telegramHTTPClient)
+		conversation := handler.NewTelegramConversation(accountService, telegramClient)
+		if configuration.TelegramUpdateMode == "webhook" {
+			mux.Handle("POST /api/telegram/webhook", handler.NewTelegramWebhookWithConversation(configuration.TelegramWebhookSecret, conversation))
+		} else {
+			telegramPoller, err = notification.NewTelegramPoller(configuration.TelegramBotToken, telegramHTTPClient, conversation, slog.Default())
+			if err != nil {
+				slog.Error("Telegram poller initialization failed", "error_class", "telegram_poller_config")
+				os.Exit(1)
+			}
+		}
+		if accountService != nil {
+			telegramAccountOutbox, err = notification.NewTelegramAccountOutbox(retentionStore, accountCipher, telegramClient, slog.Default(), time.Now)
+			if err != nil {
+				slog.Error("Telegram account outbox initialization failed", "error", err)
+				os.Exit(1)
+			}
+		}
 	}
 	mux.HandleFunc("GET /healthz", handler.Health)
 	mux.HandleFunc("GET /readyz", handler.Health)
@@ -48,15 +153,24 @@ func main() {
 	defer stop()
 	if retentionStore != nil {
 		go runRetentionCleanup(signalContext, retentionStore, configuration.RetentionDays)
+		if emailOutbox != nil {
+			go emailOutbox.Run(signalContext, time.Second)
+		}
+		if telegramAccountOutbox != nil {
+			go telegramAccountOutbox.Run(signalContext, time.Second)
+		}
+		if monitoringService != nil {
+			go runMonitoring(signalContext, monitoringService)
+		}
 		if configuration.TelegramBotToken != "" {
-			telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", http.DefaultClient)
-			if configuration.TelegramRelayURL != "" {
-				telegramClient = notification.NewTelegramViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, http.DefaultClient)
-			}
+			telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", telegramHTTPClient)
 			go runTelegramRetentionCleanup(signalContext, notification.NewTelegramRetention(telegramClient, retentionStore))
 		}
 	}
-	server := &http.Server{Addr: ":" + configuration.Port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	if telegramPoller != nil {
+		go telegramPoller.Run(signalContext)
+	}
+	server := &http.Server{Addr: ":" + configuration.Port, Handler: handler.TechnicalIncidentMiddleware(mux, technicalService, slog.Default(), time.Now), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server stopped", "error", err)
@@ -68,6 +182,28 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(shutdownContext); err != nil {
 		slog.Error("graceful shutdown failed", "error", err)
+	}
+}
+
+func runMonitoring(ctx context.Context, monitor *monitoring.Service) {
+	run := func() {
+		requestContext, cancel := context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
+		if err := monitor.Tick(requestContext); err != nil {
+			slog.Warn("monitoring tick failed", "error_class", fmt.Sprintf("%T", err))
+		}
+	}
+	run()
+	timer := time.NewTimer(monitoring.UntilNextQuarterHour(time.Now()))
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			run()
+			timer.Reset(monitoring.UntilNextQuarterHour(time.Now()))
+		}
 	}
 }
 
@@ -129,7 +265,7 @@ func runRetentionCleanup(ctx context.Context, store *repository.Postgres, retent
 	}
 }
 
-func configuredNotifiers(configuration config.Config, store *repository.Postgres) []notification.Sender {
+func configuredNotifiers(configuration config.Config, store *repository.Postgres, telegramHTTPClient notification.HTTPClient) []notification.Sender {
 	senders := make([]notification.Sender, 0, 2)
 	if configuration.SMTPAddress != "" && configuration.EmailFrom != "" && configuration.EmailTo != "" {
 		transport := notification.NewSMTPTransport(configuration.SMTPAddress, configuration.SMTPUsername, configuration.SMTPPassword)
@@ -137,13 +273,9 @@ func configuredNotifiers(configuration config.Config, store *repository.Postgres
 	}
 	if configuration.TelegramBotToken != "" && store != nil {
 		retention := time.Duration(configuration.TelegramNotificationRetentionHours) * time.Hour
-		if configuration.TelegramRelayURL != "" {
-			senders = append(senders, notification.NewTelegramSubscribersViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, store, http.DefaultClient, retention))
-		} else {
-			senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, http.DefaultClient, retention))
-		}
+		senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, telegramHTTPClient, retention))
 	} else if configuration.TelegramBotToken != "" && configuration.TelegramChatID != "" {
-		senders = append(senders, notification.NewTelegram(configuration.TelegramBotToken, configuration.TelegramChatID, http.DefaultClient))
+		senders = append(senders, notification.NewTelegram(configuration.TelegramBotToken, configuration.TelegramChatID, telegramHTTPClient))
 	}
 	return senders
 }

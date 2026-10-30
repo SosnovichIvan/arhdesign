@@ -3,6 +3,9 @@ info:
   title: arhDesign Contact API
   version: 1.0.0
   description: Public anonymous endpoint for portfolio contact submissions.
+  license:
+    name: Proprietary
+    url: https://designer-svetlana.ru/
 servers:
   - url: /api
 paths:
@@ -50,12 +53,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
 components:
-  securitySchemes:
-    operatorSession:
-      type: apiKey
-      in: cookie
-      name: __Host-arhdesign_session
-      description: "Reserved for future operator-only endpoints. The public contact endpoint explicitly opts out with security: []."
   schemas:
     CreateContactSubmissionRequest:
       type: object

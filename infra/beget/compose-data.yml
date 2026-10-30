@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    cpus: "1.60"
+    mem_limit: 2304m
+    pids_limit: 256
+    shm_size: 256m
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-80}", "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-768MB}"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "${DATA_PRIVATE_ADDRESS:?DATA_PRIVATE_ADDRESS is required}:5432:5432"
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  postgres-backup:
+    image: arhdesign-postgres-backup:${RELEASE_IMAGE_TAG:?RELEASE_IMAGE_TAG is required}
+    cpus: "0.35"
+    mem_limit: 512m
+    pids_limit: 96
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ${DATA_ENV_FILE:-/etc/arhdesign/data.env}
+    environment:
+      BACKUP_CHECK_SUBSET: ${BACKUP_CHECK_SUBSET:-1/30}
+      BACKUP_HOST_ID: ${BACKUP_HOST_ID:-arhdesign-beget-data}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_LOCAL_RETENTION_DAYS: ${BACKUP_LOCAL_RETENTION_DAYS:-7}
+      BACKUP_REMOTE_DAILY_RETENTION: ${BACKUP_REMOTE_DAILY_RETENTION:-30}
+      BACKUP_REMOTE_MONTHLY_RETENTION: ${BACKUP_REMOTE_MONTHLY_RETENTION:-12}
+      OFFSITE_BACKUP_ENABLED: ${OFFSITE_BACKUP_ENABLED:-false}
+      PGDATABASE: ${POSTGRES_DB}
+      PGHOST: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGUSER: ${POSTGRES_USER}
+      RESTIC_PASSWORD: ${BACKUP_RESTIC_PASSWORD:-}
+      RESTIC_REPOSITORY: ${BACKUP_RESTIC_REPOSITORY:-}
+    command: ["/usr/local/bin/backup-postgres"]
+    restart: unless-stopped
+    volumes:
+      - postgres_backups:/backups
+
+volumes:
+  postgres_backups:
+  postgres_data:

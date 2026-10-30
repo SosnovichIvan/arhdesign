@@ -1,0 +1,17 @@
+{$CADDY_SITE} {
+	log {
+		output file /data/logs/access.log {
+			roll_size 10mb
+			roll_keep 30
+			roll_keep_for 720h
+		}
+		format json
+	}
+	encode zstd gzip
+
+	@api path /api/* /healthz /readyz
+	reverse_proxy @api {$API_UPSTREAM} {
+		header_up X-Arhdesign-Client-IP {remote_host}
+	}
+	reverse_proxy web:3000
+}

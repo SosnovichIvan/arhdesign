@@ -11,17 +11,22 @@ vi.mock("next/image", () => ({
   },
 }));
 vi.mock("next/link", () => ({ default: ({ children, href, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} {...props}>{children}</a> }));
-const { notFound } = vi.hoisted(() => ({ notFound: vi.fn(() => { throw new Error("not found"); }) }));
+const { notFound, redirect } = vi.hoisted(() => ({
+  notFound: vi.fn(() => { throw new Error("not found"); }),
+  redirect: vi.fn(() => { throw new Error("redirect"); }),
+}));
 const router = vi.hoisted(() => ({ back: vi.fn(), push: vi.fn() }));
-vi.mock("next/navigation", () => ({ notFound, useRouter: () => router }));
+vi.mock("next/navigation", () => ({ notFound, redirect, usePathname: () => "/", useRouter: () => router }));
 
 import RootLayout, { metadata } from "./layout";
 import HomePage from "./page";
 import PrivacyPage, { metadata as privacyMetadata } from "./privacy/page";
 import ProjectsPage from "./projects/page";
+import RegisterPage, { metadata as registerMetadata } from "./register/page";
 import ProjectPage, { generateMetadata, generateStaticParams } from "./projects/[slug]/page";
 import robots from "./robots";
 import sitemap from "./sitemap";
+import { AccountAuthProvider } from "@/features/accountAuth";
 import { ProjectCard } from "@/shared/components/projectCard";
 import { ProjectCarousel } from "@/shared/components/projectCarousel";
 import { BackButton } from "@/shared/components/backButton";
@@ -29,7 +34,7 @@ import { SiteFooter } from "@/shared/components/siteFooter";
 import { SiteHeader } from "@/shared/components/siteHeader";
 import { SocialLinks } from "@/shared/components/socialLinks";
 import { projects } from "@/shared/config";
-import { ThemeToggle } from "@/features/themeToggle";
+import { ThemePreferenceProvider, ThemeToggle } from "@/features/themeToggle";
 import { CarouselControl, Container, Dialog, Typography } from "@/shared/ui";
 
 afterEach(() => {
@@ -88,10 +93,15 @@ describe("public portfolio UI", () => {
     render(<PrivacyPage />);
     expect(screen.getByRole("heading", { name: "Политика обработки персональных данных", level: 1 })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Открыть политику в PDF" }).getAttribute("href")).toBe("/documents/personal-data-policy-2026-09-19-v2.pdf");
+
+    cleanup();
+    expect(() => RegisterPage()).toThrow("redirect");
+    expect(redirect).toHaveBeenCalledWith("/?auth=register");
+    expect(registerMetadata.robots).toEqual({ index: false, follow: false });
   });
 
   it("renders shared cards, controls and social links", () => {
-    render(<><Container><Typography as="h2" variant="title">Тест</Typography><ProjectCard project={projects[0]} /><CarouselControl direction="next" /><CarouselControl direction="previous" /></Container><SiteHeader /><SiteFooter /><SocialLinks /></>);
+    render(<><Container><Typography as="h2" variant="title">Тест</Typography><ProjectCard project={projects[0]} /><CarouselControl direction="next" /><CarouselControl direction="previous" /></Container><ThemePreferenceProvider><AccountAuthProvider><SiteHeader /></AccountAuthProvider></ThemePreferenceProvider><SiteFooter /><SocialLinks /></>);
     expect(screen.getByRole("img", { name: projects[0].title })).toBeTruthy();
     expect(screen.getAllByRole("link", { name: /Открыть VK/ }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Следующее изображение" })).toBeTruthy();
@@ -100,7 +110,7 @@ describe("public portfolio UI", () => {
   });
 
   it("opens and closes the mobile navigation menu", () => {
-    render(<SiteHeader />);
+    render(<ThemePreferenceProvider><AccountAuthProvider><SiteHeader /></AccountAuthProvider></ThemePreferenceProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Открыть меню" }));
     const menu = screen.getByRole("navigation", { name: "Мобильная навигация" });
     expect(menu).toBeTruthy();
@@ -161,9 +171,10 @@ describe("public portfolio UI", () => {
 
   it("toggles the document theme and manages dialog keyboard interactions", () => {
     const onClose = vi.fn();
-    render(<><ThemeToggle /><Dialog isOpen label="Тестовый диалог" onClose={onClose}><button type="button">Первый</button><button type="button">Последний</button></Dialog></>);
+    render(<ThemePreferenceProvider><ThemeToggle /><Dialog isOpen label="Тестовый диалог" onClose={onClose}><button type="button">Первый</button><button type="button">Последний</button></Dialog></ThemePreferenceProvider>);
     fireEvent.click(screen.getByRole("button", { name: "Включить тёмную тему" }));
     expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(document.querySelector("[data-dialog-overlay]")?.className).toContain("bg-overlay");
     fireEvent.click(screen.getByRole("button", { name: "Включить светлую тему" }));
     expect(document.documentElement.dataset.theme).toBe("light");
     fireEvent.keyDown(document, { key: "Escape" });

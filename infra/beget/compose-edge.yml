@@ -1,0 +1,38 @@
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    cpus: "0.50"
+    mem_limit: 256m
+    pids_limit: 128
+    depends_on:
+      web:
+        condition: service_healthy
+    environment:
+      API_UPSTREAM: ${API_PRIVATE_ADDRESS:?API_PRIVATE_ADDRESS is required}:8080
+      CADDY_SITE: ${CADDY_SITE:?CADDY_SITE is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+  web:
+    image: arhdesign-web:${RELEASE_IMAGE_TAG:?RELEASE_IMAGE_TAG is required}
+    cpus: "1.40"
+    mem_limit: 1536m
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  caddy_config:
+  caddy_data:
