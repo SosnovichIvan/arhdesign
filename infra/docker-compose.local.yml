@@ -16,6 +16,7 @@ services:
       EMAIL_FROM: no-reply@designer-svetlana.local
       EMAIL_TO: admin@designer-svetlana.local
       TELEGRAM_BOT_USERNAME: polismakovaSvetlanaBot
+      TELEGRAM_UPDATE_MODE: ""
       TECH_ADMIN_USERNAME: ${TECH_ADMIN_USERNAME:-technical.admin}
       TECH_ADMIN_EMAIL: ${TECH_ADMIN_EMAIL:-technical-admin@designer-svetlana.local}
       TECH_ADMIN_PASSWORD: ${TECH_ADMIN_PASSWORD:-development-only-tech-password}
