@@ -81,7 +81,8 @@ describe("public portfolio UI", () => {
   it("renders layout, landing and catalog content", () => {
     render(<RootLayout><HomePage /></RootLayout>);
     expect(screen.getByRole("heading", { name: "Пространства, которые остаются" })).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "Подробнее" })).toHaveLength(3);
+    expect(screen.getAllByRole("link", { name: "Подробнее" })).toHaveLength(4);
+    expect(screen.getByRole("heading", { name: "Уют на высоте" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Перейти" }).getAttribute("href")).toBe("/projects");
     expect(screen.getAllByText("Полисмакова Светлана", { exact: false }).length).toBeGreaterThan(0);
 
@@ -186,12 +187,12 @@ describe("public portfolio UI", () => {
 
   it("generates page metadata and routing manifests", async () => {
     expect(metadata.alternates?.canonical).toBe("/");
-    expect(generateStaticParams()).toHaveLength(3);
+    expect(generateStaticParams()).toHaveLength(4);
     expect((await generateMetadata({ params: Promise.resolve({ slug: projects[0].slug }) })).title).toBe(projects[0].title);
     expect(await generateMetadata({ params: Promise.resolve({ slug: "missing" }) })).toEqual({});
     expect(robots().rules).toEqual({ allow: "/", userAgent: "*" });
     expect(privacyMetadata.alternates?.canonical).toBe("/privacy");
-    expect(sitemap()).toHaveLength(6);
+    expect(sitemap()).toHaveLength(7);
   });
 
   it("renders a project page and sends unknown projects to notFound", async () => {
@@ -200,5 +201,14 @@ describe("public portfolio UI", () => {
     expect(screen.getByRole("button", { name: "Назад" })).toBeTruthy();
     await expect(ProjectPage({ params: Promise.resolve({ slug: "missing" }) })).rejects.toThrow("not found");
     expect(notFound).toHaveBeenCalledOnce();
+  });
+
+  it("renders the cozy-at-height project with its complete gallery and description", async () => {
+    const project = projects.find(({ slug }) => slug === "cozy-at-height");
+    expect(project?.images).toHaveLength(19);
+    render(await ProjectPage({ params: Promise.resolve({ slug: "cozy-at-height" }) }));
+    expect(screen.getByRole("heading", { name: "Уют на высоте" })).toBeTruthy();
+    expect(screen.getByText(/Дизайн держится на сочетании тёплых оттенков/)).toBeTruthy();
+    expect(screen.getByText("01 / 19")).toBeTruthy();
   });
 });
