@@ -15,7 +15,7 @@ const json=(body:unknown,status=200)=>Promise.resolve(new Response(JSON.stringif
 const page=(messages:unknown[])=>({canSend:true,chatId:"chat-1",currentUserId:"user-1",hasMore:false,messages,nextCursor:null,projectId:"project-1"});
 
 beforeEach(()=>{Object.defineProperty(document,"cookie",{configurable:true,value:"arhdesign_csrf=csrf-token"});vi.stubGlobal("requestAnimationFrame",(callback:FrameRequestCallback)=>{callback(0);return 1});vi.stubGlobal("crypto",{randomUUID:()=>"00000000-0000-0000-0000-000000000031"});Element.prototype.scrollIntoView=vi.fn()});
-afterEach(()=>{cleanup();vi.clearAllMocks();vi.unstubAllGlobals()});
+afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals()});
 
 describe("ProjectChatPage",()=>{
   it("shows the chat list, history and sends a message",async()=>{const fetchMock=vi.fn((input:string|URL|Request,init?:RequestInit)=>{const url=String(input);if(init?.method==="POST"&&url.endsWith("/messages"))return json(ownMessage,201);if(url.endsWith("/chats"))return json({canCreate:true,items:[summary]});if(url.includes("/chats/chat-1?"))return json(page([firstMessage]));return json(project)});vi.stubGlobal("fetch",fetchMock);render(<ProjectChatPage projectId="project-1"/>);expect(await screen.findByText("Проверила планировку")).toBeTruthy();expect(screen.getAllByText("Общий чат проекта").length).toBeGreaterThan(0);fireEvent.change(screen.getByLabelText("Сообщение"),{target:{value:"Отправлено"}});fireEvent.click(screen.getByRole("button",{name:"Отправить сообщение"}));expect(await screen.findByText("Отправлено")).toBeTruthy()});
@@ -210,10 +210,12 @@ describe("ProjectChatPage",()=>{
 
   it("falls back from an unknown route chat and supports an empty workspace", async () => {
     const fetchMock = vi.fn((input: string | URL | Request) => { const url = String(input); if (url.endsWith("/chats")) return json({ canCreate: true, items: [] }); return json(project); });
+    const addEventListener = vi.spyOn(window, "addEventListener");
     vi.stubGlobal("fetch", fetchMock);
     render(<ProjectChatPage chatId="missing-chat" projectId="project-1" />);
     expect(await screen.findByText("Создайте первый чат проекта.")).toBeTruthy();
     expect(screen.getByText("Выберите или создайте чат")).toBeTruthy();
+    await waitFor(() => expect(addEventListener.mock.calls.some(([type]) => type === "focus")).toBe(true));
     fireEvent(window, new Event("focus"));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/chats")).length).toBeGreaterThan(1));
   });

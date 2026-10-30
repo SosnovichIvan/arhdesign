@@ -18,8 +18,8 @@ Quality gate `R1-QA-002` пройден. Блокирующих дефектов
 | OpenAPI lint | оба контракта валидны |
 | Next.js production build | пройден, 19 маршрутов сгенерированы |
 | Playwright | 32/32 |
-| Cypress | 52/52, 133.82 s, без повторных попыток |
-| Go race | пройден на Go 1.26.9 |
+| Cypress | 52/52, 53 s на production build, без повторных попыток |
+| Go race | пройден на Go 1.26.10 |
 | Go integration coverage | statements 90.0% на PostgreSQL 17 |
 | `govulncheck` v1.7.0 | 0 достижимых уязвимостей |
 | `npm audit --omit=dev --audit-level=high` | 0 уязвимостей production-зависимостей |
@@ -33,9 +33,9 @@ Quality gate `R1-QA-002` пройден. Блокирующих дефектов
 - Устранены ошибки UUID-cast и LIKE-экранирования в PostgreSQL-запросах.
 - Добавлены интеграционные и негативные тесты репозиториев, обработчиков,
   мониторинга, SMTP и проектных уведомлений.
-- Стабилизирована синхронизация Cypress со вторичной загрузкой страницы проекта
-  в development-режиме React.
-- Backend переведён с уязвимого Go 1.25.13 на Go 1.26.9.
+- Cypress переведён на production build, чтобы HMR development-сервера не
+  прерывал начальные запросы динамических страниц.
+- Backend переведён с уязвимого Go 1.25.13 на Go 1.26.10.
 - `golang.org/x/text` обновлён с 0.40.0 до 0.41.0.
 
 ## Воспроизводимые команды
@@ -51,11 +51,11 @@ npm run test:ui
 npm audit --omit=dev --audit-level=high
 
 cd apps/api
-GOTOOLCHAIN=go1.26.9 go test -race -count=1 ./...
-GOTOOLCHAIN=go1.26.9 go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+GOTOOLCHAIN=go1.26.10 go test -race -count=1 ./...
+GOTOOLCHAIN=go1.26.10 go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
 ```
 
-Backend integration coverage выполнялся в `golang:1.26.9-alpine` в сети
+Backend integration coverage выполнялся в `golang:1.26.10-alpine` в сети
 локального Compose с изолированной БД `arhdesign_test`; отчёт формируется в
 `apps/api/coverage.final.txt`, а сгенерированный файл не входит в поставку.
 
