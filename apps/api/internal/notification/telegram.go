@@ -50,7 +50,7 @@ func (adapter TelegramSubscribers) Send(ctx context.Context, submission Submissi
 	}
 	for _, chatID := range chatIDs {
 		telegram := Telegram{authorization: adapter.authorization, chatID: fmt.Sprint(chatID), client: adapter.client, url: adapter.url}
-		messageID, err := telegram.send(ctx, telegram.chatID, "Новая заявка с сайта\n"+formatSubmission(submission), false, false)
+		messageID, err := telegram.send(ctx, telegram.chatID, "Новая заявка с сайта\n"+formatSubmission(submission), "")
 		if err != nil {
 			return err
 		}
@@ -73,22 +73,30 @@ func NewTelegramViaRelay(relayURL, relaySecret string, client HTTPClient) Telegr
 func (Telegram) Name() string { return "telegram" }
 
 func (adapter Telegram) Send(ctx context.Context, submission Submission) error {
-	_, err := adapter.send(ctx, adapter.chatID, "Новая заявка с сайта\n"+formatSubmission(submission), false, false)
+	_, err := adapter.send(ctx, adapter.chatID, "Новая заявка с сайта\n"+formatSubmission(submission), "")
 	return err
 }
 
 func (adapter Telegram) SendMessage(ctx context.Context, chatID int64, text string, menu, active bool) error {
-	_, err := adapter.send(ctx, fmt.Sprint(chatID), text, menu, active)
-	return err
-}
-
-func (adapter Telegram) send(ctx context.Context, chatID, text string, menu, active bool) (int64, error) {
-	payload := map[string]any{"chat_id": chatID, "text": text}
+	action := ""
 	if menu {
-		action := "Подписаться"
+		action = "Подписаться"
 		if active {
 			action = "Отписаться"
 		}
+	}
+	_, err := adapter.send(ctx, fmt.Sprint(chatID), text, action)
+	return err
+}
+
+func (adapter Telegram) SendAction(ctx context.Context, chatID int64, text, action string) error {
+	_, err := adapter.send(ctx, fmt.Sprint(chatID), text, action)
+	return err
+}
+
+func (adapter Telegram) send(ctx context.Context, chatID, text, action string) (int64, error) {
+	payload := map[string]any{"chat_id": chatID, "text": text}
+	if action != "" {
 		payload["reply_markup"] = map[string]any{"keyboard": [][]string{{action}}, "resize_keyboard": true}
 	}
 	body, err := json.Marshal(payload)

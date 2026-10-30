@@ -10,6 +10,7 @@ export default defineConfig({
 	},
   test: {
     environment: "node",
+    maxWorkers: 4,
 		exclude: ["e2e/**", "node_modules/**"],
     coverage: {
       provider: "v8",

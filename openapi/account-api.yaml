@@ -1,0 +1,3471 @@
+openapi: 3.0.3
+info:
+  title: arhDesign Account API
+  version: 0.2.0
+  description: R1 contract for identity, sessions, projects and super-admin user management.
+  license:
+    name: Proprietary
+    url: https://designer-svetlana.ru/
+servers:
+  - url: /api
+tags:
+  - name: Auth
+    description: Registration, email verification, authentication and session lifecycle.
+  - name: Projects
+    description: Project creation and management within the actor's visibility scope.
+  - name: Users
+    description: Super-admin account moderation operations.
+  - name: Settings
+    description: Per-user interface settings and per-project personal settings.
+  - name: Chats
+    description: Personal and named group conversations outside project scope.
+  - name: TechnicalSupport
+    description: Sanitized runtime reports and authenticated product feedback.
+security:
+  - accountSession: []
+paths:
+  /v1/auth/register:
+    post:
+      tags: [Auth]
+      operationId: registerAccount
+      summary: Register an account and enqueue email verification
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '202':
+          description: Registration was accepted; verification may be delivered asynchronously.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingVerification'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: A normalized identifier is unavailable; the response does not identify the existing account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/verify-email:
+    post:
+      tags: [Auth]
+      operationId: verifyEmail
+      summary: Verify an account email with a single-use token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OneTimeTokenRequest'
+      responses:
+        '200':
+          description: Email verification completed or had already completed with this account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleStatus'
+        '400':
+          $ref: '#/components/responses/InvalidOrExpiredToken'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/resend-verification:
+    post:
+      tags: [Auth]
+      operationId: resendVerification
+      summary: Return a generic result and enqueue mail only when applicable
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentifierRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/GenericMailAccepted'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/verification-channel:
+    post:
+      tags: [Auth]
+      operationId: selectVerificationChannel
+      summary: Select email delivery or hand off confirmation to the Telegram bot
+      description: The response is identical for existing and absent identifiers. Credentials are never accepted by this endpoint; Telegram login and password are entered only in the private bot chat.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationChannelRequest'
+      responses:
+        '202':
+          description: The selection was accepted. A Telegram URL is returned for every valid Telegram request and does not reveal account existence.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelHandoff'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Authenticate by login or email and create a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated; session and CSRF cookies are rotated.
+          headers:
+            Set-Cookie:
+              description: HttpOnly session cookies and a readable CSRF cookie. Values are never returned in JSON.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          description: Credentials are invalid; login and password are not distinguished.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '403':
+          description: Account is unverified (`account_unverified`) or disabled (`account_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshSession
+      summary: Rotate a single-use refresh token
+      security:
+        - refreshSession: []
+          csrfHeader: []
+      responses:
+        '200':
+          description: Session cookies were rotated.
+          headers:
+            Set-Cookie:
+              description: Rotated session cookies.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Revoke the current session family
+      security:
+        - accountSession: []
+          csrfHeader: []
+        - refreshSession: []
+          csrfHeader: []
+      responses:
+        '204':
+          description: Current session family was revoked; repeated logout is safe.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      operationId: forgotPassword
+      summary: Request a password-reset email without disclosing account existence
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordRecoveryRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/GenericMailAccepted'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /telegram/webhook:
+    post:
+      tags: [Auth]
+      operationId: receiveTelegramAccountUpdate
+      summary: Receive a Telegram Bot API update for account confirmation and recovery
+      description: Only private-chat messages are processed. The password message is deleted best-effort after every verification result and its text is never persisted or logged.
+      security:
+        - telegramWebhookSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramUpdate'
+      responses:
+        '200':
+          description: Update acknowledged, including ignored, duplicate and expired-state updates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TelegramWebhookResult'
+        '401':
+          description: Telegram webhook secret is absent or invalid.
+        '405':
+          description: Only POST is accepted.
+
+  /v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      operationId: resetPassword
+      summary: Replace a password using a single-use reset token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordRequest'
+      responses:
+        '204':
+          description: Password changed; all existing sessions were revoked.
+        '400':
+          $ref: '#/components/responses/InvalidOrExpiredToken'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/me:
+    get:
+      tags: [Auth]
+      operationId: getCurrentAccount
+      summary: Get the current authenticated account
+      responses:
+        '200':
+          description: Current authenticated account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /v1/settings:
+    get:
+      tags: [Settings]
+      operationId: getUserSettings
+      summary: Get interface settings of the current account
+      responses:
+        '200':
+          description: Settings follow the authenticated account across browsers.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    put:
+      tags: [Settings]
+      operationId: updateUserSettings
+      summary: Replace interface settings of the current account
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserSettingsRequest'
+      responses:
+        '200':
+          description: Settings were stored for the current account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserSettings'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+
+  /v1/chats:
+    get:
+      tags: [Chats]
+      operationId: listGlobalChats
+      summary: List global chats visible to the current account
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Chats ordered by most recent activity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalChatPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    post:
+      tags: [Chats]
+      operationId: createGlobalChat
+      summary: Create a personal or named group chat
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGlobalChatRequest'
+      responses:
+        '201':
+          description: Chat created, or the existing direct chat returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalChatSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/chat-user-candidates:
+    get:
+      tags: [Chats]
+      operationId: searchGlobalChatCandidates
+      summary: Find active accounts by login or email for chat creation
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+      responses:
+        '200':
+          description: Bounded candidate list excluding the current account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalChatCandidateList'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /v1/chats/{chatId}:
+    get:
+      tags: [Chats]
+      operationId: getGlobalChat
+      summary: Read one page of a global conversation
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Conversation visible to a member or global administrator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalChatConversation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/chats/{chatId}/messages:
+    post:
+      tags: [Chats]
+      operationId: createGlobalChatMessage
+      summary: Send an idempotent global chat message
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectChatMessageRequest'
+      responses:
+        '201':
+          description: Message created, or the original response to an identical retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalChatMessage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/chats/{chatId}/read:
+    post:
+      tags: [Chats]
+      operationId: markGlobalChatRead
+      summary: Advance the current member read marker
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ChatId'
+      responses:
+        '204':
+          description: Read marker advanced.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/technical/frontend-errors:
+    post:
+      tags: [TechnicalSupport]
+      operationId: reportFrontendError
+      summary: Accept a sanitized frontend runtime failure from an authenticated session
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontendErrorReportRequest'
+      responses:
+        '202':
+          description: Report accepted for asynchronous technical notification.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleStatus'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/technical/feedback:
+    post:
+      tags: [TechnicalSupport]
+      operationId: createTechnicalFeedback
+      summary: Send a complaint or suggestion to the technical administrator
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TechnicalFeedbackRequest'
+      responses:
+        '202':
+          description: Feedback stored and queued for asynchronous delivery.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimpleStatus'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List projects visible to the current account
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ProjectStatus'
+      responses:
+        '200':
+          description: Projects visible to the actor; hidden projects do not affect counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project with its initial memberships
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectRequest'
+      responses:
+        '201':
+          description: Project and initial memberships were committed atomically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectView'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/projects/{projectId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Get a project visible to the current account
+      responses:
+        '200':
+          description: Project visible to the actor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+    patch:
+      tags: [Projects]
+      operationId: updateProject
+      summary: Update a project under optimistic concurrency control
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectRequest'
+      responses:
+        '200':
+          description: Updated project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectView'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Archive/delete a project; only super-admin may perform this R1 action
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatchVersion'
+      responses:
+        '204':
+          description: Project was removed from active work; history retention still applies.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/projects/{projectId}/customer:
+    put:
+      tags: [Projects]
+      operationId: assignProjectCustomer
+      summary: Assign or replace the customer membership of a project
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [customerUserId]
+              properties:
+                customerUserId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Customer membership was assigned without rewriting creator/history.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectView'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/projects/{projectId}/members:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: listProjectMembers
+      summary: List active participants visible in one project
+      responses:
+        '200':
+          description: Participants are grouped by user; one user may hold more than one project role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMemberList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+    post:
+      tags: [Projects]
+      operationId: addProjectMember
+      summary: Add an active platform user to the project as an executor
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddProjectMemberRequest'
+      responses:
+        '201':
+          description: The participant was added atomically and an audit event was recorded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMember'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/projects/{projectId}/member-candidates:
+    get:
+      tags: [Projects]
+      operationId: searchProjectMemberCandidates
+      summary: Search active users who are not active participants of the project
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+      responses:
+        '200':
+          description: At most ten prefix matches by normalized login or email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMemberCandidateList'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/projects/{projectId}/members/{userId}:
+    delete:
+      tags: [Projects]
+      operationId: removeProjectMember
+      summary: Revoke all removable active memberships of one participant
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Executor and project-admin memberships were revoked; customer membership cannot be removed here.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/projects/{projectId}/finance-summary:
+    get:
+      tags: [Projects]
+      operationId: getProjectFinanceSummary
+      summary: Get ledger-derived project totals and pending expense requests
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Totals are calculated from immutable confirmed ledger operations; open requests never reduce the balance.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectFinanceSummary'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/projects/{projectId}/expenses:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: listProjectExpenses
+      summary: List recent expense requests for one accessible project
+      responses:
+        '200':
+          description: A bounded newest-first list of expense requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectExpenseList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+    post:
+      tags: [Projects]
+      operationId: createProjectExpense
+      summary: Create an expense request without treating it as a completed payment
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 128
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectExpenseRequest'
+      responses:
+        '201':
+          description: Expense request created with pending or auto-approved status according to project settings.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectExpense'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/projects/{projectId}/materials:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Projects]
+      operationId: listProjectMaterials
+      summary: List active materials visible to the current project member
+      responses:
+        '200':
+          description: Materials with server-derived paid and remaining totals.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMaterialList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+    post:
+      tags: [Projects]
+      operationId: createProjectMaterial
+      summary: Add a material or supplier contract to a project
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectMaterialInput'
+      responses:
+        '201':
+          description: Material created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMaterial'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/projects/{projectId}/chat:
+    get:
+      tags: [Projects]
+      operationId: getProjectChat
+      summary: Read one page of the common project chat
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: A chronological page of messages visible to an active project member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectChatPage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/projects/{projectId}/chats:
+    get:
+      tags: [Projects]
+      operationId: listProjectChats
+      summary: List chats visible to the current project participant
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Visible project chats.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectChatList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+    post:
+      tags: [Projects]
+      operationId: createProjectChat
+      summary: Create a named project chat
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateProjectChatRequest' }
+      responses:
+        '201':
+          description: Chat created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectChatSummary' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+
+  /v1/projects/{projectId}/chat/messages:
+    post:
+      tags: [Projects]
+      operationId: createProjectChatMessage
+      summary: Send an idempotent message to the common project chat
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectChatMessageRequest'
+      responses:
+        '201':
+          description: Message created, or the original response to an identical retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectChatMessage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/projects/{projectId}/chats/context:
+    put:
+      tags: [Projects]
+      operationId: openProjectContextChat
+      summary: Open the unique contextual chat for a task, material, or expense
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenProjectContextChatRequest'
+      responses:
+        '200':
+          description: Existing or newly created contextual chat.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectChatContext'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/projects/{projectId}/chats/{chatId}:
+    get:
+      tags: [Projects]
+      operationId: getProjectContextChat
+      summary: Read one page of a contextual project chat
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ChatId'
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: A chronological message page with its linked project entity.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectChatPage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+    patch:
+      tags: [Projects]
+      operationId: updateProjectChat
+      summary: Rename a project chat
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ChatId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateProjectChatRequest' }
+      responses:
+        '200':
+          description: Updated chat.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectChatSummary' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Projects]
+      operationId: deleteProjectChat
+      summary: Soft-delete a project chat managed by the current account
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ChatId'
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, format: int64, minimum: 1 }
+      responses:
+        '204': { description: Chat deleted. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/projects/{projectId}/chats/{chatId}/read:
+    post:
+      tags: [Projects]
+      operationId: markProjectChatRead
+      summary: Advance the current account read marker to a visible chat message
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ChatId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarkProjectChatReadRequest' }
+      responses:
+        '204': { description: Read marker advanced. }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+
+  /v1/projects/{projectId}/chats/{chatId}/members:
+    get:
+      tags: [Projects]
+      operationId: listProjectChatMembers
+      summary: List active members of one project chat
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }, { $ref: '#/components/parameters/ChatId' }]
+      responses:
+        '200':
+          description: Chat members.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectChatMemberList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+    post:
+      tags: [Projects]
+      operationId: addProjectChatMember
+      summary: Add an active project participant to a chat
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }, { $ref: '#/components/parameters/ChatId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProjectChatMemberRequest' }
+      responses:
+        '201':
+          description: Member added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectChatMember' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/projects/{projectId}/chats/{chatId}/members/{userId}:
+    delete:
+      tags: [Projects]
+      operationId: removeProjectChatMember
+      summary: Remove a removable member from a chat
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ChatId'
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Member removed. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/projects/{projectId}/chats/{chatId}/messages:
+    post:
+      tags: [Projects]
+      operationId: createProjectContextChatMessage
+      summary: Send an idempotent message to a contextual project chat
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - $ref: '#/components/parameters/ChatId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectChatMessageRequest'
+      responses:
+        '201':
+          description: Message created, or the original response to an identical retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectChatMessage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/projects/{projectId}/documents:
+    get:
+      tags: [Projects]
+      operationId: listProjectDocuments
+      summary: List active project documents
+      parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+      responses:
+        '200':
+          description: Active project documents.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectDocumentList' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+    post:
+      tags: [Projects]
+      operationId: uploadProjectDocument
+      summary: Upload one project document, up to 10 MiB
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: X-File-Name
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 240 }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary, maxLength: 10485760 }
+      responses:
+        '201':
+          description: Uploaded document metadata.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProjectDocument' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+
+  /v1/projects/{projectId}/documents/{documentId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - name: documentId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Projects]
+      operationId: downloadProjectDocument
+      summary: View or download one accessible project document
+      responses:
+        '200':
+          description: Document bytes.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+    delete:
+      tags: [Projects]
+      operationId: deleteProjectDocument
+      summary: Soft-delete one project document
+      security: [{ accountSession: [], csrfHeader: [] }]
+      responses:
+        '204': { description: Document deleted. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+
+  /v1/projects/{projectId}/materials/{materialId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - name: materialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      tags: [Projects]
+      operationId: updateProjectMaterial
+      summary: Replace editable material fields under optimistic locking
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectMaterialInput'
+      responses:
+        '200':
+          description: Material updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectMaterial'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Projects]
+      operationId: deleteProjectMaterial
+      summary: Soft-delete a material while preserving its audit history
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/IfMatchVersion'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteProjectMaterialRequest'
+      responses:
+        '204':
+          description: Material soft-deleted.
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/projects/{projectId}/upcoming:
+    get:
+      tags: [Projects]
+      operationId: listProjectUpcomingItems
+      summary: List upcoming tasks and meetings visible in one project
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: days
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+      responses:
+        '200':
+          description: Stable bounded feed in the half-open range [now, now + days).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectUpcomingFeed'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/projects/{projectId}/calendar:
+    get:
+      tags: [Projects]
+      operationId: listProjectCalendar
+      summary: List tasks and meetings visible in a project calendar range
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Visible project events in the half-open range [from, to), limited to 370 days and 500 items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectCalendarFeed'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/calendar:
+    get:
+      tags: [Projects]
+      operationId: listGlobalCalendar
+      summary: List visible projects, tasks, and meetings for the global calendar
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: projectId
+          in: query
+          description: Optional repeated filter containing only projects visible to the current account.
+          style: form
+          explode: true
+          schema:
+            type: array
+            maxItems: 50
+            uniqueItems: true
+            items:
+              type: string
+              format: uuid
+      responses:
+        '200':
+          description: At most 100 visible project lanes and 1000 visible events in the half-open range [from, to), limited to 370 days.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GlobalCalendarFeed'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/projects/{projectId}/settings:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      tags: [Settings]
+      operationId: getProjectUserSettings
+      summary: Get personal settings of the current account in one project
+      responses:
+        '200':
+          description: Personal project settings, or documented defaults when not stored yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectUserSettings'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+    put:
+      tags: [Settings]
+      operationId: updateProjectUserSettings
+      summary: Replace personal settings of the current account in one project
+      security:
+        - accountSession: []
+          csrfHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectUserSettingsRequest'
+      responses:
+        '200':
+          description: Personal project settings were stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectUserSettings'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+
+  /v1/projects/{projectId}/tasks:
+    get:
+      tags: [Projects]
+      operationId: listProjectTasks
+      summary: List tasks visible to the current account in one project
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      responses:
+        '200':
+          description: Tasks are already restricted by project membership, assignment and privileges.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectTaskList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+    post:
+      tags: [Projects]
+      operationId: createProjectTask
+      summary: Create a project task in the upcoming-work vertical slice
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectTaskRequest'
+      responses:
+        '201':
+          description: Task and audit record were committed atomically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectUpcomingItem'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/projects/{projectId}/tasks/{taskId}:
+    patch:
+      tags: [Projects]
+      operationId: updateProjectTask
+      summary: Update a visible project task using optimistic locking
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProjectTaskRequest'
+      responses:
+        '200':
+          description: Task was updated and an audit event was committed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectTask'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /v1/projects/{projectId}/meetings:
+    post:
+      tags: [Projects]
+      operationId: createProjectMeeting
+      summary: Create a project meeting in the upcoming-work vertical slice
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/ProjectId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProjectMeetingRequest'
+      responses:
+        '201':
+          description: Meeting and audit record were committed atomically.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectUpcomingItem'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/admin/users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: Super-admin-only bounded user list
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Cursor'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/AccountStatus'
+        - name: identifier
+          in: query
+          description: Exact normalized login or email; enumeration controls apply.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 254
+      responses:
+        '200':
+          description: User page without password/token/security hashes.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /v1/admin/users/{userId}/disable:
+    post:
+      tags: [Users]
+      operationId: disableUser
+      summary: Disable an account and revoke all of its sessions
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      responses:
+        '200':
+          description: User disabled and all sessions revoked; repeated request is safe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          description: Version conflict or last active super-admin invariant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/admin/users/{userId}/restore:
+    post:
+      tags: [Users]
+      operationId: restoreUser
+      summary: Restore a previously disabled account
+      security:
+        - accountSession: []
+          csrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/IfMatchVersion'
+      responses:
+        '200':
+          description: User restored; repeated request is safe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceHidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/notifications:
+    get:
+      tags: [Notifications]
+      operationId: listAccountNotifications
+      summary: List recent project notifications for the current account across all projects
+      parameters:
+        - name: pageSize
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Recent account notifications and total unread count.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AccountNotificationList' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: markAccountNotificationRead
+      summary: Mark one notification owned by the current account as read
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Notification marked as read. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+
+  /v1/notifications/read-all:
+    post:
+      tags: [Notifications]
+      operationId: markAllAccountNotificationsRead
+      summary: Mark every notification owned by the current account as read
+      security: [{ accountSession: [], csrfHeader: [] }]
+      responses:
+        '204': { description: Notifications marked as read. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+components:
+  securitySchemes:
+    accountSession:
+      type: apiKey
+      in: cookie
+      name: __Host-arhdesign_session
+      description: Opaque server-side session cookie. Raw values are never exposed to JavaScript.
+    refreshSession:
+      type: apiKey
+      in: cookie
+      name: __Secure-arhdesign_refresh
+      description: Path-scoped, single-use refresh cookie. Raw values are never exposed to JavaScript.
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Synchronizer token matching the readable CSRF cookie on state-changing requests.
+    telegramWebhookSecret:
+      type: apiKey
+      in: header
+      name: X-Telegram-Bot-Api-Secret-Token
+      description: Constant-time compared secret configured when the Telegram webhook is registered.
+
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ChatId:
+      name: chatId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 25
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque, signed cursor. Clients must not construct or inspect it.
+      schema:
+        type: string
+        maxLength: 500
+    IfMatchVersion:
+      name: If-Match
+      in: header
+      required: true
+      description: Quoted decimal optimistic version returned by the previous representation.
+      schema:
+        type: string
+        pattern: '^"[1-9][0-9]*"$'
+
+  responses:
+    ValidationError:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    RateLimited:
+      description: Request rate limit was reached.
+      headers:
+        Retry-After:
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    GenericMailAccepted:
+      description: Generic response; it never confirms whether an account exists.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SimpleStatus'
+    InvalidOrExpiredToken:
+      description: One-time token is invalid, expired, consumed or incompatible with the request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthenticated:
+      description: No active authenticated session.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    CsrfRejected:
+      description: Origin or CSRF token validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: Actor is authenticated but not allowed to perform this action.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    ResourceHidden:
+      description: Resource does not exist or is hidden from this actor.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Conflict:
+      description: Optimistic version or domain uniqueness conflict.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InternalError:
+      description: Unexpected failure without internal details.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    ServiceUnavailable:
+      description: A required security dependency is temporarily unavailable; the operation did not execute.
+      headers:
+        Retry-After:
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+
+  schemas:
+    ThemePreference:
+      type: string
+      enum: [light, dark]
+    UserSettings:
+      type: object
+      additionalProperties: false
+      required: [theme]
+      properties:
+        theme:
+          $ref: '#/components/schemas/ThemePreference'
+    UpdateUserSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [theme]
+      properties:
+        theme:
+          $ref: '#/components/schemas/ThemePreference'
+    ProjectUserSettings:
+      type: object
+      additionalProperties: false
+      required: [upcomingDays]
+      properties:
+        upcomingDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+          default: 7
+    UpdateProjectUserSettingsRequest:
+      type: object
+      additionalProperties: false
+      required: [upcomingDays]
+      properties:
+        upcomingDays:
+          type: integer
+          minimum: 1
+          maximum: 90
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [login, email, firstName, professionalRoleCode, password, passwordConfirmation]
+      properties:
+        login:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{3,64}$'
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        firstName:
+          type: string
+          minLength: 1
+          maxLength: 100
+        lastName:
+          type: string
+          maxLength: 100
+        middleName:
+          type: string
+          maxLength: 100
+        professionalRoleCode:
+          type: string
+          minLength: 2
+          maxLength: 64
+        password:
+          type: string
+          format: password
+          minLength: 15
+          maxLength: 128
+        passwordConfirmation:
+          type: string
+          format: password
+          minLength: 15
+          maxLength: 128
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          minLength: 3
+          maxLength: 254
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 128
+        rememberMe:
+          type: boolean
+          default: false
+    IdentifierRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier]
+      properties:
+        identifier:
+          type: string
+          minLength: 3
+          maxLength: 254
+    DeliveryChannel:
+      type: string
+      enum: [email, telegram]
+    VerificationChannelRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier, channel]
+      properties:
+        identifier:
+          type: string
+          minLength: 3
+          maxLength: 254
+        channel:
+          $ref: '#/components/schemas/DeliveryChannel'
+    PasswordRecoveryRequest:
+      type: object
+      additionalProperties: false
+      required: [identifier, channel]
+      properties:
+        identifier:
+          type: string
+          minLength: 3
+          maxLength: 254
+        channel:
+          $ref: '#/components/schemas/DeliveryChannel'
+    OneTimeTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 32
+          maxLength: 512
+          writeOnly: true
+    ResetPasswordRequest:
+      allOf:
+        - $ref: '#/components/schemas/OneTimeTokenRequest'
+        - type: object
+          required: [password, passwordConfirmation]
+          properties:
+            password:
+              type: string
+              format: password
+              minLength: 15
+              maxLength: 128
+              writeOnly: true
+            passwordConfirmation:
+              type: string
+              format: password
+              minLength: 15
+              maxLength: 128
+              writeOnly: true
+    PendingVerification:
+      type: object
+      additionalProperties: false
+      required: [status, channelSelectionRequired]
+      properties:
+        status:
+          type: string
+          enum: [verification_pending]
+        channelSelectionRequired:
+          type: boolean
+          enum: [true]
+    ChannelHandoff:
+      type: object
+      additionalProperties: false
+      required: [status, channel]
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+        channel:
+          $ref: '#/components/schemas/DeliveryChannel'
+        telegramBotUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: Present for Telegram selection. The browser opens this URL; no credentials are entered on the website.
+    TelegramUpdate:
+      type: object
+      additionalProperties: true
+      required: [update_id]
+      properties:
+        update_id:
+          type: integer
+          format: int64
+        message:
+          type: object
+          nullable: true
+          additionalProperties: true
+          properties:
+            message_id:
+              type: integer
+              format: int64
+            text:
+              type: string
+            chat:
+              type: object
+              required: [id, type]
+              properties:
+                id:
+                  type: integer
+                  format: int64
+                type:
+                  type: string
+            from:
+              type: object
+              properties:
+                username:
+                  type: string
+    TelegramWebhookResult:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [processed, ignored]
+    SimpleStatus:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          maxLength: 64
+    SessionView:
+      type: object
+      additionalProperties: false
+      required: [account, expiresAt]
+      properties:
+        account:
+          $ref: '#/components/schemas/AccountView'
+        expiresAt:
+          type: string
+          format: date-time
+    AccountStatus:
+      type: string
+      enum: [pending_verification, active, disabled]
+    AccountView:
+      type: object
+      additionalProperties: false
+      required: [id, login, email, firstName, professionalRole, status, globalRole, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        login:
+          type: string
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+          nullable: true
+        middleName:
+          type: string
+          nullable: true
+        professionalRole:
+          $ref: '#/components/schemas/ProfessionalRole'
+        status:
+          $ref: '#/components/schemas/AccountStatus'
+        globalRole:
+          type: string
+          nullable: true
+          enum: [super_admin, technical_admin]
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+    ProfessionalRole:
+      type: object
+      additionalProperties: false
+      required: [code, name]
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+    ProjectRole:
+      type: string
+      enum: [customer, project_admin, executor]
+    ProjectMember:
+      type: object
+      additionalProperties: false
+      required: [userId, login, email, firstName, professionalRole, projectRoles, joinedAt, removable]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        login:
+          type: string
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+          nullable: true
+        middleName:
+          type: string
+          nullable: true
+        professionalRole:
+          $ref: '#/components/schemas/ProfessionalRole'
+        projectRoles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/ProjectRole'
+        joinedAt:
+          type: string
+          format: date-time
+        removable:
+          type: boolean
+          description: False for a participant holding the active customer role.
+    ProjectMemberList:
+      type: object
+      additionalProperties: false
+      required: [items, canManage]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/ProjectMember'
+        canManage:
+          type: boolean
+    ProjectMemberCandidate:
+      type: object
+      additionalProperties: false
+      required: [userId, login, email, firstName, professionalRole]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        login:
+          type: string
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+          nullable: true
+        middleName:
+          type: string
+          nullable: true
+        professionalRole:
+          $ref: '#/components/schemas/ProfessionalRole'
+    ProjectMemberCandidateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/ProjectMemberCandidate'
+    AddProjectMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId:
+          type: string
+          format: uuid
+    ExpenseCategory:
+      type: string
+      enum: [materials, furniture, contractor, delivery, installation, design, other]
+    ExpenseStatus:
+      type: string
+      enum: [draft, pending_approval, auto_approved, approved, rejected, awaiting_payment, paid, cancelled]
+    ProjectFinanceSummary:
+      type: object
+      additionalProperties: false
+      required: [currencyCode, confirmedIncomeMinor, confirmedExpenseMinor, availableBalanceMinor, pendingExpenseMinor, canCreateExpense]
+      properties:
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        confirmedIncomeMinor:
+          type: integer
+          format: int64
+        confirmedExpenseMinor:
+          type: integer
+          format: int64
+        availableBalanceMinor:
+          type: integer
+          format: int64
+        pendingExpenseMinor:
+          type: integer
+          format: int64
+          minimum: 0
+        canCreateExpense:
+          type: boolean
+    ProjectExpense:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, amountMinor, currencyCode, category, description, status, createdByUserId, createdAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        category:
+          $ref: '#/components/schemas/ExpenseCategory'
+        description:
+          type: string
+        vendorName:
+          type: string
+          nullable: true
+        plannedPaymentOn:
+          type: string
+          format: date
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ExpenseStatus'
+        createdByUserId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        contextChatId:
+          type: string
+          format: uuid
+          nullable: true
+    ProjectExpenseList:
+      type: object
+      additionalProperties: false
+      required: [items, canCreateExpense]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/ProjectExpense'
+        canCreateExpense:
+          type: boolean
+    CreateProjectExpenseRequest:
+      type: object
+      additionalProperties: false
+      required: [amountMinor, category, description]
+      properties:
+        amountMinor:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 99999999999999
+        category:
+          $ref: '#/components/schemas/ExpenseCategory'
+        description:
+          type: string
+          minLength: 2
+          maxLength: 2000
+        vendorName:
+          type: string
+          maxLength: 200
+          nullable: true
+        plannedPaymentOn:
+          type: string
+          format: date
+          nullable: true
+    MaterialCategory:
+      type: string
+      enum: [materials, furniture, delivery, installation, other]
+    MaterialPaymentStatus:
+      type: string
+      enum: [unpaid, partial, paid]
+    MaterialDeliveryStatus:
+      type: string
+      enum: [expected, partially_delivered, delivered, installed, cancelled]
+    ProjectMaterial:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, category, name, supplierName, contractAmountMinor, paidAmountMinor, remainingAmountMinor, currencyCode, paymentStatus, deliveryStatus, createdByUserId, createdAt, updatedAt, version, canEdit, canDelete]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        category: { $ref: '#/components/schemas/MaterialCategory' }
+        name: { type: string }
+        supplierName: { type: string }
+        contactInfo: { type: string, nullable: true }
+        contractReference: { type: string, nullable: true }
+        contractAmountMinor: { type: integer, format: int64, minimum: 1 }
+        paidAmountMinor: { type: integer, format: int64, minimum: 0 }
+        remainingAmountMinor: { type: integer, format: int64, minimum: 0 }
+        currencyCode: { type: string, pattern: '^[A-Z]{3}$' }
+        linkedExpenseId: { type: string, format: uuid, nullable: true }
+        linkedExpenseDescription: { type: string, nullable: true }
+        paymentStatus: { $ref: '#/components/schemas/MaterialPaymentStatus' }
+        deliveryStatus: { $ref: '#/components/schemas/MaterialDeliveryStatus' }
+        plannedDeliveryOn: { type: string, format: date, nullable: true }
+        actualDeliveryOn: { type: string, format: date, nullable: true }
+        installationOn: { type: string, format: date, nullable: true }
+        notes: { type: string, nullable: true }
+        createdByUserId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        version: { type: integer, format: int64, minimum: 1 }
+        canEdit: { type: boolean }
+        canDelete: { type: boolean }
+        contextChatId: { type: string, format: uuid, nullable: true }
+    ProjectMaterialList:
+      type: object
+      additionalProperties: false
+      required: [items, canCreate, canViewFinancialInformation]
+      properties:
+        items:
+          type: array
+          maxItems: 200
+          items: { $ref: '#/components/schemas/ProjectMaterial' }
+        canCreate: { type: boolean }
+        canViewFinancialInformation: { type: boolean }
+    ProjectMaterialInput:
+      type: object
+      additionalProperties: false
+      required: [category, name, supplierName, contractAmountMinor, paymentStatus, deliveryStatus]
+      properties:
+        category: { $ref: '#/components/schemas/MaterialCategory' }
+        name: { type: string, minLength: 2, maxLength: 300 }
+        supplierName: { type: string, minLength: 2, maxLength: 200 }
+        contactInfo: { type: string, maxLength: 500, nullable: true }
+        contractReference: { type: string, maxLength: 200, nullable: true }
+        contractAmountMinor: { type: integer, format: int64, minimum: 1, maximum: 99999999999999 }
+        linkedExpenseId: { type: string, format: uuid, nullable: true }
+        paymentStatus: { $ref: '#/components/schemas/MaterialPaymentStatus' }
+        deliveryStatus: { $ref: '#/components/schemas/MaterialDeliveryStatus' }
+        plannedDeliveryOn: { type: string, format: date, nullable: true }
+        actualDeliveryOn: { type: string, format: date, nullable: true }
+        installationOn: { type: string, format: date, nullable: true }
+        notes: { type: string, maxLength: 5000, nullable: true }
+    DeleteProjectMaterialRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 2, maxLength: 500 }
+    ProjectChatAuthor:
+      type: object
+      additionalProperties: false
+      required: [userId, login, firstName]
+      properties:
+        userId: { type: string, format: uuid }
+        login: { type: string }
+        firstName: { type: string }
+        lastName: { type: string, nullable: true }
+    ProjectChatMessage:
+      type: object
+      additionalProperties: false
+      required: [id, chatId, projectId, body, author, createdAt, version]
+      properties:
+        id: { type: string, format: uuid }
+        chatId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        body: { type: string }
+        author: { $ref: '#/components/schemas/ProjectChatAuthor' }
+        createdAt: { type: string, format: date-time }
+        editedAt: { type: string, format: date-time, nullable: true }
+        deletedAt: { type: string, format: date-time, nullable: true }
+        version: { type: integer, format: int64, minimum: 1 }
+    ProjectChatSummary:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, kind, name, memberCount, unreadCount, createdAt, canManage, version]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        kind: { type: string, enum: [project, context] }
+        name: { type: string }
+        contextType: { $ref: '#/components/schemas/ProjectChatContextType' }
+        contextId: { type: string, format: uuid, nullable: true }
+        contextTitle: { type: string, nullable: true }
+        memberCount: { type: integer, minimum: 1 }
+        unreadCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        canManage: { type: boolean }
+        version: { type: integer, format: int64, minimum: 1 }
+    ProjectChatList:
+      type: object
+      additionalProperties: false
+      required: [items, canCreate]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectChatSummary' }
+        canCreate: { type: boolean }
+    CreateProjectChatRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200 }
+        memberUserIds:
+          type: array
+          uniqueItems: true
+          maxItems: 100
+          items: { type: string, format: uuid }
+    UpdateProjectChatRequest:
+      type: object
+      additionalProperties: false
+      required: [name, version]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200 }
+        version: { type: integer, format: int64, minimum: 1 }
+    ProjectChatMember:
+      type: object
+      additionalProperties: false
+      required: [userId, login, firstName, joinedAt, removable]
+      properties:
+        userId: { type: string, format: uuid }
+        login: { type: string }
+        firstName: { type: string }
+        lastName: { type: string, nullable: true }
+        joinedAt: { type: string, format: date-time }
+        removable: { type: boolean }
+    ProjectChatMemberList:
+      type: object
+      additionalProperties: false
+      required: [items, canManage]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectChatMember' }
+        canManage: { type: boolean }
+    ProjectChatMemberRequest:
+      type: object
+      additionalProperties: false
+      required: [userId]
+      properties:
+        userId: { type: string, format: uuid }
+    MarkProjectChatReadRequest:
+      type: object
+      additionalProperties: false
+      required: [messageId]
+      properties:
+        messageId: { type: string, format: uuid }
+    AccountNotification:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, eventType, title, body, href, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        eventType: { type: string }
+        title: { type: string }
+        body: { type: string }
+        href: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: string, format: date-time, nullable: true }
+    AccountNotificationList:
+      type: object
+      additionalProperties: false
+      required: [items, unreadCount]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/AccountNotification' }
+        unreadCount: { type: integer, minimum: 0 }
+    ProjectChatContextType:
+      type: string
+      enum: [task, material, expense]
+    ProjectChatContext:
+      type: object
+      additionalProperties: false
+      required: [chatId, projectId, contextType, contextId, contextTitle, name]
+      properties:
+        chatId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        contextType: { $ref: '#/components/schemas/ProjectChatContextType' }
+        contextId: { type: string, format: uuid }
+        contextTitle: { type: string }
+        name: { type: string }
+    ProjectChatPage:
+      type: object
+      additionalProperties: false
+      required: [chatId, projectId, currentUserId, messages, hasMore, canSend]
+      properties:
+        chatId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        currentUserId: { type: string, format: uuid }
+        messages:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ProjectChatMessage' }
+        nextCursor: { type: string, format: uuid, nullable: true }
+        hasMore: { type: boolean }
+        canSend: { type: boolean }
+        context:
+          $ref: '#/components/schemas/ProjectChatContext'
+    OpenProjectContextChatRequest:
+      type: object
+      additionalProperties: false
+      required: [contextType, contextId, name]
+      properties:
+        contextType: { $ref: '#/components/schemas/ProjectChatContextType' }
+        contextId: { type: string, format: uuid }
+        name: { type: string, minLength: 2, maxLength: 200 }
+    CreateProjectChatMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [body, clientMessageId]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000 }
+        clientMessageId: { type: string, format: uuid }
+    ProjectDocument:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, name, mediaType, sizeBytes, uploadedByUserId, createdAt, canDelete, version]
+      properties:
+        id: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        name: { type: string }
+        mediaType: { type: string }
+        sizeBytes: { type: integer, format: int64, minimum: 1 }
+        uploadedByUserId: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        canDelete: { type: boolean }
+        version: { type: integer, format: int64, minimum: 1 }
+    ProjectDocumentList:
+      type: object
+      additionalProperties: false
+      required: [items, canUpload]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ProjectDocument' }
+        canUpload: { type: boolean }
+    ProjectStatus:
+      type: string
+      enum: [draft, active, paused, completed, pending_deletion, archived]
+    ProjectView:
+      type: object
+      additionalProperties: false
+      required: [id, name, type, status, currencyCode, autoApproveExpenses, createdByUserId, createdAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+        address:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        customerUserId:
+          type: string
+          format: uuid
+          nullable: true
+        adminUserIds:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+        plannedStartOn:
+          type: string
+          format: date
+          nullable: true
+        plannedFinishOn:
+          type: string
+          format: date
+          nullable: true
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        description:
+          type: string
+          nullable: true
+        autoApproveExpenses:
+          type: boolean
+        createdByUserId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+    CreateProjectRequest:
+      type: object
+      additionalProperties: false
+      required: [name, type, currencyCode, autoApproveExpenses]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        type:
+          type: string
+          minLength: 2
+          maxLength: 100
+        address:
+          type: string
+          maxLength: 500
+        customerUserId:
+          type: string
+          format: uuid
+          nullable: true
+          description: May be null only when the actor is super-admin.
+        adminUserIds:
+          type: array
+          uniqueItems: true
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+        plannedStartOn:
+          type: string
+          format: date
+        plannedFinishOn:
+          type: string
+          format: date
+        currencyCode:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        description:
+          type: string
+          maxLength: 5000
+        autoApproveExpenses:
+          type: boolean
+          default: true
+    UpdateProjectRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        type:
+          type: string
+          minLength: 2
+          maxLength: 100
+        address:
+          type: string
+          maxLength: 500
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        plannedStartOn:
+          type: string
+          format: date
+          nullable: true
+        plannedFinishOn:
+          type: string
+          format: date
+          nullable: true
+        description:
+          type: string
+          maxLength: 5000
+          nullable: true
+        autoApproveExpenses:
+          type: boolean
+    ProjectPage:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ProjectView'
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+    ProjectUpcomingKind:
+      type: string
+      enum: [task, meeting]
+    ProjectUpcomingItem:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, kind, title, effectiveAt, createdAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/ProjectUpcomingKind'
+        title:
+          type: string
+          minLength: 2
+          maxLength: 200
+        description:
+          type: string
+          nullable: true
+          maxLength: 5000
+        status:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+          maxLength: 500
+        effectiveAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+    ProjectUpcomingFeed:
+      type: object
+      additionalProperties: false
+      required: [days, rangeStart, rangeEnd, items]
+      properties:
+        days:
+          type: integer
+          minimum: 1
+          maximum: 90
+        rangeStart:
+          type: string
+          format: date-time
+        rangeEnd:
+          type: string
+          format: date-time
+        items:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/ProjectUpcomingItem'
+    ProjectCalendarFeed:
+      type: object
+      additionalProperties: false
+      required: [rangeStart, rangeEnd, items]
+      properties:
+        rangeStart:
+          type: string
+          format: date-time
+        rangeEnd:
+          type: string
+          format: date-time
+        items:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/ProjectUpcomingItem'
+    GlobalCalendarProject:
+      type: object
+      additionalProperties: false
+      required: [id, name, status, items]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        status:
+          $ref: '#/components/schemas/ProjectStatus'
+        plannedStartOn:
+          type: string
+          format: date
+          nullable: true
+        plannedFinishOn:
+          type: string
+          format: date
+          nullable: true
+        items:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/ProjectUpcomingItem'
+    GlobalCalendarFeed:
+      type: object
+      additionalProperties: false
+      required: [rangeStart, rangeEnd, projects, hasMoreProjects, truncatedEvents]
+      properties:
+        rangeStart:
+          type: string
+          format: date-time
+        rangeEnd:
+          type: string
+          format: date-time
+        projects:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/GlobalCalendarProject'
+        hasMoreProjects:
+          type: boolean
+        truncatedEvents:
+          type: boolean
+    CreateProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      required: [title, dueAt]
+      properties:
+        title:
+          type: string
+          minLength: 2
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 5000
+        dueAt:
+          type: string
+          format: date-time
+        assigneeUserIds:
+          type: array
+          uniqueItems: true
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
+    ProjectTaskStatus:
+      type: string
+      enum: [new, in_progress, review, changes_requested, accepted]
+    ProjectTaskAssignee:
+      type: object
+      additionalProperties: false
+      required: [userId, login, firstName]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        login:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+          nullable: true
+    ProjectTask:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, title, status, dueAt, assignees, canEdit, canChangeStatus, createdAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        projectId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/ProjectTaskStatus'
+        dueAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        assignees:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ProjectTaskAssignee'
+        canEdit:
+          type: boolean
+        canChangeStatus:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        contextChatId:
+          type: string
+          format: uuid
+          nullable: true
+    ProjectTaskList:
+      type: object
+      additionalProperties: false
+      required: [items, canCreate]
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '#/components/schemas/ProjectTask'
+        canCreate:
+          type: boolean
+    UpdateProjectTaskRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        status:
+          $ref: '#/components/schemas/ProjectTaskStatus'
+    CreateProjectMeetingRequest:
+      type: object
+      additionalProperties: false
+      required: [title, startsAt, endsAt]
+      properties:
+        title:
+          type: string
+          minLength: 2
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 5000
+        location:
+          type: string
+          maxLength: 500
+        startsAt:
+          type: string
+          format: date-time
+        endsAt:
+          type: string
+          format: date-time
+    GlobalChatKind:
+      type: string
+      enum: [direct, group]
+    GlobalChatCandidate:
+      type: object
+      additionalProperties: false
+      required: [userId, login, email, firstName]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        login:
+          type: string
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+          nullable: true
+    GlobalChatCandidateList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/GlobalChatCandidate'
+    GlobalChatMember:
+      allOf:
+        - $ref: '#/components/schemas/GlobalChatCandidate'
+        - type: object
+          required: [joinedAt]
+          properties:
+            joinedAt:
+              type: string
+              format: date-time
+    GlobalChatAuthor:
+      type: object
+      additionalProperties: false
+      required: [userId, login, firstName]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        login:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+          nullable: true
+    GlobalChatMessage:
+      type: object
+      additionalProperties: false
+      required: [id, chatId, author, body, createdAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        chatId:
+          type: string
+          format: uuid
+        author:
+          $ref: '#/components/schemas/GlobalChatAuthor'
+        body:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deletedAt:
+          type: string
+          format: date-time
+          nullable: true
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+    GlobalChatSummary:
+      type: object
+      additionalProperties: false
+      required: [id, kind, displayName, members, unreadCount, lastActivityAt, version]
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/GlobalChatKind'
+        name:
+          type: string
+          nullable: true
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 200
+        members:
+          type: array
+          minItems: 2
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/GlobalChatMember'
+        lastMessage:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/GlobalChatMessage'
+          nullable: true
+        unreadCount:
+          type: integer
+          minimum: 0
+        lastActivityAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+    GlobalChatPage:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/GlobalChatSummary'
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+    GlobalChatConversation:
+      type: object
+      additionalProperties: false
+      required: [chat, currentUserId, messages, hasMore, canSend]
+      properties:
+        chat:
+          $ref: '#/components/schemas/GlobalChatSummary'
+        currentUserId:
+          type: string
+          format: uuid
+        messages:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/GlobalChatMessage'
+        nextCursor:
+          type: string
+          format: uuid
+          nullable: true
+        hasMore:
+          type: boolean
+        canSend:
+          type: boolean
+    CreateGlobalChatRequest:
+      type: object
+      additionalProperties: false
+      required: [kind, memberUserIds]
+      properties:
+        kind:
+          $ref: '#/components/schemas/GlobalChatKind'
+        name:
+          type: string
+          minLength: 2
+          maxLength: 200
+        memberUserIds:
+          type: array
+          minItems: 1
+          maxItems: 49
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+    FrontendErrorReportRequest:
+      type: object
+      additionalProperties: false
+      required: [message, path, fingerprint]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 300
+        path:
+          type: string
+          minLength: 1
+          maxLength: 300
+          pattern: '^/[^?#]*$'
+        fingerprint:
+          type: string
+          minLength: 16
+          maxLength: 128
+          pattern: '^[A-Za-z0-9_-]+$'
+        digest:
+          type: string
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._-]+$'
+    TechnicalFeedbackCategory:
+      type: string
+      enum: [complaint, suggestion]
+    TechnicalFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [category, message, path]
+      properties:
+        category:
+          $ref: '#/components/schemas/TechnicalFeedbackCategory'
+        message:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        path:
+          type: string
+          minLength: 1
+          maxLength: 300
+          pattern: '^/[^?#]*$'
+    AdminUserView:
+      allOf:
+        - $ref: '#/components/schemas/AccountView'
+        - type: object
+          required: [registeredAt]
+          properties:
+            registeredAt:
+              type: string
+              format: date-time
+            lastInteractiveLoginAt:
+              type: string
+              format: date-time
+              nullable: true
+    UserPage:
+      type: object
+      additionalProperties: false
+      required: [items, hasMore]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/AdminUserView'
+        nextCursor:
+          type: string
+          nullable: true
+        hasMore:
+          type: boolean
+    ApiError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, requestId]
+          properties:
+            code:
+              type: string
+              pattern: '^[a-z][a-z0-9_]{2,63}$'
+            message:
+              type: string
+              minLength: 1
+              maxLength: 200
+            requestId:
+              type: string
+              minLength: 8
+              maxLength: 100
+            fields:
+              type: object
+              maxProperties: 20
+              additionalProperties:
+                type: string
+                maxLength: 200
+              description: Field messages never repeat submitted passwords, tokens or full PII.

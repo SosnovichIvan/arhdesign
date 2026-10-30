@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import "./globals.css";
+import { AccountAuthProvider } from "@/features/accountAuth";
+import { ThemePreferenceProvider } from "@/features/themeToggle";
 import { SiteHeader } from "@/shared/components/siteHeader";
 import { organizationJsonLd, siteDescription, siteName, siteUrl } from "@/shared/config";
 
@@ -28,5 +30,5 @@ export const metadata: Metadata = {
 type RootLayoutProps = Readonly<{ children: ReactNode }>;
 
 export default function RootLayout({ children }: RootLayoutProps) {
-  return <html lang="ru" data-theme="light"><body><SiteHeader /><div className="pt-[73px]">{children}</div><script dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} type="application/ld+json" /></body></html>;
+  return <html lang="ru" data-scroll-behavior="smooth" data-theme="light"><body><ThemePreferenceProvider><AccountAuthProvider><SiteHeader /><div className="pt-[73px]">{children}</div></AccountAuthProvider></ThemePreferenceProvider><script dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} type="application/ld+json" /></body></html>;
 }

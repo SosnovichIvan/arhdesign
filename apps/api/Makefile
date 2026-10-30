@@ -2,6 +2,7 @@
 
 generate:
 	oapi-codegen --config oapi-codegen.yaml ../../openapi/contact-api.yaml
+	oapi-codegen --config oapi-codegen-account.yaml ../../openapi/account-api.yaml
 
 test:
 	go test -race -count=1 ./...

@@ -3,32 +3,50 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/account"
 )
 
-type telegramStoreFake struct {
-	active                 bool
-	activated, deactivated int
+type telegramAccountAuthFake struct {
+	step                      string
+	beginErr, stepErr         error
+	submitErr, completeErr    error
+	beginChat, submitChat     int64
+	completeChat, completeMsg int64
+	login, username, password string
 }
 
-func (store *telegramStoreFake) ActivateTelegramSubscriber(context.Context, int64, string) error {
-	store.active = true
-	store.activated++
+func (service *telegramAccountAuthFake) BeginTelegramConfirmation(_ context.Context, chatID int64, _ string) error {
+	service.beginChat = chatID
+	service.step = "awaiting_login"
+	return service.beginErr
+}
+func (service *telegramAccountAuthFake) TelegramConfirmationStep(context.Context, int64) (string, error) {
+	return service.step, service.stepErr
+}
+func (service *telegramAccountAuthFake) SubmitTelegramLogin(_ context.Context, chatID int64, login string) error {
+	service.submitChat, service.login = chatID, login
+	service.step = "awaiting_password"
+	return service.submitErr
+}
+func (service *telegramAccountAuthFake) CompleteTelegramConfirmation(_ context.Context, chatID, messageID int64, username, password, _ string) error {
+	service.completeChat, service.completeMsg = chatID, messageID
+	service.username, service.password = username, password
+	return service.completeErr
+}
+
+type telegramDeleterFake struct{ chatID, messageID int64 }
+
+func (deleter *telegramDeleterFake) DeleteMessage(_ context.Context, chatID, messageID int64) error {
+	deleter.chatID, deleter.messageID = chatID, messageID
 	return nil
-}
-func (store *telegramStoreFake) DeactivateTelegramSubscriber(context.Context, int64) error {
-	store.active = false
-	store.deactivated++
-	return nil
-}
-func (store *telegramStoreFake) ActiveTelegramChatIDs(context.Context) ([]int64, error) {
-	return nil, nil
-}
-func (store *telegramStoreFake) TelegramSubscriberActive(context.Context, int64) (bool, error) {
-	return store.active, nil
 }
 
 func telegramRequest(body string) *http.Request {
@@ -36,6 +54,7 @@ func telegramRequest(body string) *http.Request {
 	request.Header.Set("X-Telegram-Bot-Api-Secret-Token", "webhook-secret")
 	return request
 }
+
 func telegramResponse(t *testing.T, response *httptest.ResponseRecorder) map[string]any {
 	t.Helper()
 	var payload map[string]any
@@ -44,64 +63,128 @@ func telegramResponse(t *testing.T, response *httptest.ResponseRecorder) map[str
 	}
 	return payload
 }
-func TestTelegramSubscriptionDialog(t *testing.T) {
-	store := &telegramStoreFake{}
-	endpoint := NewTelegramWebhook("webhook-secret", "admin", "password", store)
-	var last map[string]any
-	for _, body := range []string{
-		`{"message":{"text":"Подписаться","chat":{"id":7,"type":"private"},"from":{"username":"sveta"}}}`,
-		`{"message":{"text":"admin","chat":{"id":7,"type":"private"},"from":{"username":"sveta"}}}`,
-		`{"message":{"text":"password","chat":{"id":7,"type":"private"},"from":{"username":"sveta"}}}`,
-	} {
+
+func TestTelegramConfirmationDialogRunsInsidePrivateBotAndDeletesPassword(t *testing.T) {
+	accounts := &telegramAccountAuthFake{}
+	deleter := &telegramDeleterFake{}
+	endpoint := NewTelegramWebhook("webhook-secret", accounts, deleter)
+
+	start := httptest.NewRecorder()
+	endpoint.ServeHTTP(start, telegramRequest(`{"update_id":1,"message":{"message_id":10,"text":"/start register","chat":{"id":7,"type":"private"},"from":{"username":"sveta"}}}`))
+	if start.Code != http.StatusOK || accounts.beginChat != 7 || !strings.Contains(telegramResponse(t, start)["text"].(string), "Введите логин") {
+		t.Fatalf("start status=%d chat=%d body=%s", start.Code, accounts.beginChat, start.Body.String())
+	}
+
+	login := httptest.NewRecorder()
+	endpoint.ServeHTTP(login, telegramRequest(`{"update_id":2,"message":{"message_id":11,"text":"sveta.design","chat":{"id":7,"type":"private"},"from":{"username":"sveta"}}}`))
+	if accounts.login != "sveta.design" || !strings.Contains(telegramResponse(t, login)["text"].(string), "Введите пароль") {
+		t.Fatalf("login=%q body=%s", accounts.login, login.Body.String())
+	}
+
+	password := httptest.NewRecorder()
+	endpoint.ServeHTTP(password, telegramRequest(`{"update_id":3,"message":{"message_id":12,"text":"secret-password","chat":{"id":7,"type":"private"},"from":{"username":"sveta"}}}`))
+	if accounts.password != "secret-password" || accounts.completeChat != 7 || accounts.completeMsg != 12 {
+		t.Fatalf("complete chat=%d message=%d password=%q", accounts.completeChat, accounts.completeMsg, accounts.password)
+	}
+	if deleter.chatID != 7 || deleter.messageID != 12 {
+		t.Fatalf("password message was not deleted: %#v", deleter)
+	}
+	if !strings.Contains(telegramResponse(t, password)["text"].(string), "Профиль подтверждён") {
+		t.Fatalf("success text missing: %s", password.Body.String())
+	}
+	if strings.Contains(password.Body.String(), "secret-password") {
+		t.Fatalf("credential was echoed into the Telegram response: %s", password.Body.String())
+	}
+}
+
+func TestTelegramPasswordIsDeletedOnInvalidCredentials(t *testing.T) {
+	accounts := &telegramAccountAuthFake{step: "awaiting_password", completeErr: errors.New("invalid credentials")}
+	deleter := &telegramDeleterFake{}
+	endpoint := NewTelegramWebhook("webhook-secret", accounts, deleter)
+	response := httptest.NewRecorder()
+	endpoint.ServeHTTP(response, telegramRequest(`{"update_id":4,"message":{"message_id":19,"text":"wrong","chat":{"id":8,"type":"private"},"from":{}}}`))
+	if deleter.messageID != 19 || !strings.Contains(telegramResponse(t, response)["text"].(string), "Не удалось подтвердить") {
+		t.Fatalf("delete=%#v body=%s", deleter, response.Body.String())
+	}
+}
+
+func TestTelegramStartWelcomeAndSecurityBoundary(t *testing.T) {
+	endpoint := NewTelegramWebhook("webhook-secret", &telegramAccountAuthFake{}, &telegramDeleterFake{})
+	welcome := httptest.NewRecorder()
+	endpoint.ServeHTTP(welcome, telegramRequest(`{"update_id":5,"message":{"message_id":20,"text":"/start","chat":{"id":9,"type":"private"},"from":{"first_name":"Иван"}}}`))
+	payload := telegramResponse(t, welcome)
+	if !strings.Contains(payload["text"].(string), "Добро пожаловать Иван") || !strings.Contains(payload["text"].(string), "бот личного кабинета") {
+		t.Fatalf("welcome text missing: %#v", payload)
+	}
+
+	withoutName := httptest.NewRecorder()
+	endpoint.ServeHTTP(withoutName, telegramRequest(`{"update_id":51,"message":{"message_id":201,"text":"/menu","chat":{"id":9,"type":"private"},"from":{"first_name":"Иван\nПлохой ввод"}}}`))
+	if text := telegramResponse(t, withoutName)["text"].(string); strings.Contains(text, "Иван") || !strings.HasPrefix(text, "Добро пожаловать\n") {
+		t.Fatalf("unsafe first name must not be reflected: %q", text)
+	}
+
+	badSecret := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/telegram/webhook", strings.NewReader(`{}`))
+	endpoint.ServeHTTP(badSecret, request)
+	if badSecret.Code != http.StatusUnauthorized {
+		t.Fatalf("bad secret status=%d", badSecret.Code)
+	}
+
+	group := httptest.NewRecorder()
+	endpoint.ServeHTTP(group, telegramRequest(`{"update_id":6,"message":{"message_id":21,"text":"/start register","chat":{"id":-10,"type":"group"},"from":{}}}`))
+	if group.Code != http.StatusOK || group.Body.Len() != 0 {
+		t.Fatalf("group update must be ignored, status=%d body=%s", group.Code, group.Body.String())
+	}
+
+	wrongMethod := httptest.NewRecorder()
+	endpoint.ServeHTTP(wrongMethod, httptest.NewRequest(http.MethodGet, "/api/telegram/webhook", nil))
+	if wrongMethod.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("wrong method status=%d", wrongMethod.Code)
+	}
+
+	malformed := httptest.NewRecorder()
+	endpoint.ServeHTTP(malformed, telegramRequest(`{`))
+	if malformed.Code != http.StatusOK || malformed.Body.Len() != 0 {
+		t.Fatalf("malformed update status=%d body=%s", malformed.Code, malformed.Body.String())
+	}
+}
+
+func TestTelegramDialogFailureResponses(t *testing.T) {
+	message := func(text string, id int) *http.Request {
+		return telegramRequest(`{"message":{"message_id":` + fmt.Sprint(id) + `,"text":"` + text + `","chat":{"id":77,"type":"private"},"from":{}}}`)
+	}
+	tests := []struct {
+		name, text, expected string
+		accounts             *telegramAccountAuthFake
+	}{
+		{"start failure", "/start register", "Не удалось начать", &telegramAccountAuthFake{beginErr: errors.New("unavailable")}},
+		{"expired", "value", "не найдена или истекла", &telegramAccountAuthFake{stepErr: errors.New("expired")}},
+		{"login failure", "sveta.design", "Сессия подтверждения истекла", &telegramAccountAuthFake{step: "awaiting_login", submitErr: errors.New("expired")}},
+		{"rate limit", "password", "Слишком много попыток", &telegramAccountAuthFake{step: "awaiting_password", completeErr: account.RateLimitError{RetryAfter: time.Minute}}},
+		{"unknown state", "value", "Сессия подтверждения недоступна", &telegramAccountAuthFake{step: "unexpected"}},
+	}
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			NewTelegramWebhook("webhook-secret", test.accounts, nil).ServeHTTP(response, message(test.text, 30+index))
+			if !strings.Contains(telegramResponse(t, response)["text"].(string), test.expected) {
+				t.Fatalf("body=%s", response.Body.String())
+			}
+		})
+	}
+
+	for _, input := range []string{"/start confirm", "Подтвердить профиль", "/confirm"} {
 		response := httptest.NewRecorder()
-		endpoint.ServeHTTP(response, telegramRequest(body))
-		if response.Code != http.StatusOK {
-			t.Fatalf("status=%d", response.Code)
+		accounts := &telegramAccountAuthFake{}
+		NewTelegramWebhook("webhook-secret", accounts, nil).ServeHTTP(response, message(input, 50))
+		if accounts.beginChat != 77 {
+			t.Fatalf("legacy start %q did not begin confirmation", input)
 		}
-		last = telegramResponse(t, response)
 	}
-	if !store.active || store.activated != 1 || !strings.Contains(last["text"].(string), "Вы подписались") {
-		t.Fatalf("unexpected subscription: %#v %#v", store, last)
-	}
-	keyboard := last["reply_markup"].(map[string]any)["keyboard"].([]any)
-	if keyboard[0].([]any)[0] != "Отписаться" {
-		t.Fatalf("expected unsubscribe button, got %#v", keyboard)
-	}
-	response := httptest.NewRecorder()
-	endpoint.ServeHTTP(response, telegramRequest(`{"message":{"text":"Отписаться","chat":{"id":7,"type":"private"},"from":{}}}`))
-	if store.active || store.deactivated != 1 {
-		t.Fatal("unsubscribe must deactivate chat")
-	}
-}
-func TestTelegramStartReturnsWelcomeAndSubscriptionButton(t *testing.T) {
-	endpoint := NewTelegramWebhook("webhook-secret", "admin", "password", &telegramStoreFake{})
-	response := httptest.NewRecorder()
-	endpoint.ServeHTTP(response, telegramRequest(`{"message":{"text":"/start","chat":{"id":9,"type":"private"},"from":{}}}`))
-	payload := telegramResponse(t, response)
-	if !strings.Contains(payload["text"].(string), "связка сайта и Telegram работает корректно") {
-		t.Fatalf("welcome text is missing: %#v", payload)
-	}
-	keyboard := payload["reply_markup"].(map[string]any)["keyboard"].([]any)
-	if keyboard[0].([]any)[0] != "Подписаться" {
-		t.Fatalf("expected subscribe button, got %#v", keyboard)
-	}
-}
-func TestTelegramWebhookRejectsBadSecretAndCredentials(t *testing.T) {
-	store := &telegramStoreFake{}
-	endpoint := NewTelegramWebhook("webhook-secret", "admin", "password", store)
-	bad := httptest.NewRequest(http.MethodPost, "/api/telegram/webhook", strings.NewReader(`{}`))
-	response := httptest.NewRecorder()
-	endpoint.ServeHTTP(response, bad)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatal("bad secret must be rejected")
-	}
-	var last map[string]any
-	for _, body := range []string{`{"message":{"text":"Подписаться","chat":{"id":8,"type":"private"},"from":{}}}`, `{"message":{"text":"wrong","chat":{"id":8,"type":"private"},"from":{}}}`, `{"message":{"text":"wrong","chat":{"id":8,"type":"private"},"from":{}}}`} {
-		response := httptest.NewRecorder()
-		endpoint.ServeHTTP(response, telegramRequest(body))
-		last = telegramResponse(t, response)
-	}
-	if store.active || !strings.Contains(last["text"].(string), "Ошибка") {
-		t.Fatal("wrong credentials must not subscribe")
+
+	nilService := httptest.NewRecorder()
+	NewTelegramWebhook("webhook-secret", nil, nil).ServeHTTP(nilService, message("hello", 60))
+	if !strings.Contains(telegramResponse(t, nilService)["text"].(string), "временно недоступен") {
+		t.Fatalf("body=%s", nilService.Body.String())
 	}
 }

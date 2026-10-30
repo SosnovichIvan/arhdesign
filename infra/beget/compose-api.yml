@@ -1,0 +1,76 @@
+secrets:
+  telegram_proxy_identity:
+    file: ${TELEGRAM_PROXY_IDENTITY_FILE:-/etc/arhdesign/telegram-proxy/id_ed25519}
+  telegram_proxy_known_hosts:
+    file: ${TELEGRAM_PROXY_KNOWN_HOSTS_FILE:-/etc/arhdesign/telegram-proxy/known_hosts}
+
+services:
+  migrate:
+    image: postgres:17-alpine
+    command: ["/bin/sh", "-ec", "for migration in /migrations/*.sql; do psql --set ON_ERROR_STOP=1 --file=\"$$migration\" \"$$DATABASE_URL\"; done"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    volumes:
+      - ../../apps/api/migrations:/migrations:ro
+    restart: "no"
+
+  telegram-proxy:
+    build:
+      context: ../telegram-proxy
+    image: arhdesign-telegram-proxy:${RELEASE_IMAGE_TAG:?RELEASE_IMAGE_TAG is required}
+    cap_drop: ["ALL"]
+    mem_limit: 96m
+    pids_limit: 64
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TELEGRAM_PROXY_LOCAL_PORT: 19840
+      TELEGRAM_PROXY_REMOTE_HOST: ${TELEGRAM_PROXY_REMOTE_HOST:?TELEGRAM_PROXY_REMOTE_HOST is required}
+      TELEGRAM_PROXY_REMOTE_PORT: ${TELEGRAM_PROXY_REMOTE_PORT:-3128}
+      TELEGRAM_PROXY_SSH_HOST: ${TELEGRAM_PROXY_SSH_HOST:?TELEGRAM_PROXY_SSH_HOST is required}
+      TELEGRAM_PROXY_SSH_PORT: ${TELEGRAM_PROXY_SSH_PORT:-22}
+      TELEGRAM_PROXY_SSH_USER: ${TELEGRAM_PROXY_SSH_USER:?TELEGRAM_PROXY_SSH_USER is required}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 19840"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    restart: unless-stopped
+    secrets:
+      - telegram_proxy_identity
+      - telegram_proxy_known_hosts
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+
+  api:
+    image: arhdesign-api:${RELEASE_IMAGE_TAG:?RELEASE_IMAGE_TAG is required}
+    cpus: "1.50"
+    mem_limit: 1536m
+    pids_limit: 256
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      telegram-proxy:
+        condition: service_healthy
+    env_file:
+      - ${API_ENV_FILE:-/etc/arhdesign/api.env}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      PORT: "8080"
+      TELEGRAM_PROXY_URL: http://telegram-proxy:19840
+      TELEGRAM_UPDATE_MODE: polling
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/readyz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "${API_PRIVATE_ADDRESS:?API_PRIVATE_ADDRESS is required}:8080:8080"
+    restart: unless-stopped
+    volumes:
+      - postgres_backups:/var/lib/arhdesign-backups:ro
+
+volumes:
+  postgres_backups:

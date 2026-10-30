@@ -87,4 +87,34 @@ describe("ContactForm", () => {
 
     expect(screen.getAllByRole("dialog", { name: "Обсудить проект" })).toHaveLength(1);
   });
+
+  it("requires the provider for a canonical trigger", () => {
+    expect(() => render(<ContactFormTrigger />)).toThrow("ContactFormTrigger must be rendered inside ContactFormProvider");
+  });
+
+  it("shows every required-field validation message and rejects an oversized description", async () => {
+    render(<ContactForm />);
+    fireEvent.click(screen.getByRole("button", { name: "Обсудить проект" }));
+    fireEvent.change(screen.getByLabelText(/^Имя/), { target: { value: "Анна" } });
+    fireEvent.change(screen.getByLabelText("О проекте"), { target: { value: "x".repeat(5001) } });
+    fireEvent.click(screen.getByRole("button", { name: "Отправить запрос" }));
+    expect(await screen.findByText("Укажите телефон или почту")).toBeTruthy();
+    expect(screen.getByText("Укажите тип проекта")).toBeTruthy();
+    expect(screen.getByText("Описание проекта слишком длинное")).toBeTruthy();
+    expect(screen.getByText("Требуется согласие на обработку данных")).toBeTruthy();
+  });
+
+  it("reports a non-success response and invokes the controlled close callback", async () => {
+    const onClose = vi.fn();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 500 })));
+    render(<ContactForm isOpen onClose={onClose} showTrigger={false} />);
+    fireEvent.change(screen.getByLabelText(/^Имя/), { target: { value: "Анна" } });
+    fireEvent.change(screen.getByLabelText(/^Телефон или почта/), { target: { value: "anna@example.com" } });
+    fireEvent.change(screen.getByLabelText(/^Тип проекта/), { target: { value: "Дом" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Отправить запрос" }));
+    expect(await screen.findByText(/Не удалось отправить форму/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть форму" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 });
