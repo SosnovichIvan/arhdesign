@@ -32,6 +32,17 @@ function mockInitialLoad(globalRole: "super_admin" | null = null) {
 }
 
 describe("ProjectWorkspacePage", () => {
+  it("does not reload the same project when the router identity changes", async () => {
+    mockInitialLoad();
+    const { rerender } = render(<ProjectWorkspacePage projectId="project-1" />);
+    await screen.findByRole("heading", { name: "Полянка" });
+    const projectRequests = () => vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith("/api/v1/projects/project-1")).length;
+    expect(projectRequests()).toBe(1);
+    rerender(<ProjectWorkspacePage projectId="project-1" />);
+    await Promise.resolve();
+    expect(projectRequests()).toBe(1);
+  });
+
   it("loads the project and saves edits using optimistic version", async () => {
     Object.defineProperty(document, "cookie", { configurable: true, value: "arhdesign_csrf=csrf-token" });
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
@@ -158,7 +169,7 @@ describe("ProjectWorkspacePage", () => {
       if (isProjectMembers(input)) return Promise.resolve(response(memberList));
       if (isFinanceSummary(input)) return Promise.resolve(response(financeSummary));
       projectAttempts += 1;
-      return projectAttempts <= 2 ? Promise.reject("offline") : Promise.resolve(response(project));
+      return projectAttempts === 1 ? Promise.reject("offline") : Promise.resolve(response(project));
     });
     vi.stubGlobal("fetch", fetchMock);
     const { unmount } = render(<ProjectWorkspacePage projectId="project-1" />);

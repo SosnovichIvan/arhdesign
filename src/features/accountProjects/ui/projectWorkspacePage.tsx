@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { Button, DatePicker, Dialog, IconButton, Input, Select, Textarea } from "@/shared/ui";
 
@@ -29,14 +29,19 @@ export function ProjectWorkspacePage({ projectId }: Readonly<{ projectId: string
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const loadedProjectRef = useRef("");
+  const refreshRequestRef = useRef(0);
 
-  async function refresh(signal?: AbortSignal) {
+  async function refresh() {
+    const requestID = refreshRequestRef.current + 1;
+    refreshRequestRef.current = requestID;
     setState("loading"); setError("");
     try {
-      const [nextProject, nextAccount] = await Promise.all([loadProject(projectId, signal), loadCurrentAccount(signal)]);
+      const [nextProject, nextAccount] = await Promise.all([loadProject(projectId), loadCurrentAccount()]);
+      if (refreshRequestRef.current !== requestID) return;
       setProject(nextProject); setAccount(nextAccount); setState("ready");
     } catch (reason) {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      if (refreshRequestRef.current !== requestID) return;
       if (reason instanceof ProjectApiError && reason.status === 401) { router.replace("/?auth=login"); return; }
       setError(reason instanceof ProjectApiError && reason.status === 404 ? "Проект не найден или у вас нет к нему доступа" : reason instanceof Error ? reason.message : "Не удалось загрузить проект");
       setState("error");
@@ -44,16 +49,11 @@ export function ProjectWorkspacePage({ projectId }: Readonly<{ projectId: string
   }
 
   useEffect(() => {
-    const controller = new AbortController();
-    void Promise.all([loadProject(projectId, controller.signal), loadCurrentAccount(controller.signal)]).then(([nextProject, nextAccount]) => {
-      setProject(nextProject); setAccount(nextAccount); setState("ready");
-    }).catch((reason: unknown) => {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
-      if (reason instanceof ProjectApiError && reason.status === 401) { router.replace("/?auth=login"); return; }
-      setError(reason instanceof ProjectApiError && reason.status === 404 ? "Проект не найден или у вас нет к нему доступа" : reason instanceof Error ? reason.message : "Не удалось загрузить проект");
-      setState("error");
-    });
-    return () => controller.abort();
+    if (loadedProjectRef.current === projectId) return;
+    loadedProjectRef.current = projectId;
+    void refresh();
+    // `refresh` intentionally follows the current project and router identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, router]);
 
   if (state === "loading") return <div aria-label="Загрузка проекта" className="h-96 animate-pulse border border-border bg-surface" role="status" />;

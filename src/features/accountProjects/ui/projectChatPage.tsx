@@ -25,6 +25,8 @@ export function ProjectChatPage({ chatId, projectId }: Readonly<{ chatId?: strin
   const [arrivalNotice, setArrivalNotice] = useState("");
   const [mobileDetail, setMobileDetail] = useState(Boolean(chatId));
   const bottomRef = useRef<HTMLDivElement>(null);
+  const workspaceKeyRef = useRef("");
+  const workspaceRequestRef = useRef(0);
 
   const selected = useMemo(() => chats.find((item) => item.id === selectedId) ?? null, [chats, selectedId]);
 	const settingsChat = useMemo(() => chats.find((item) => item.id === settingsChatId) ?? null, [chats, settingsChatId]);
@@ -36,21 +38,29 @@ export function ProjectChatPage({ chatId, projectId }: Readonly<{ chatId?: strin
     return page;
   }, [projectId]);
 
-  const loadWorkspace = useCallback(async (signal?: AbortSignal) => {
+  const loadWorkspace = useCallback(async () => {
+    const requestID = workspaceRequestRef.current + 1;
+    workspaceRequestRef.current = requestID;
     setState("loading"); setError("");
     try {
-      const [projectValue, list] = await Promise.all([loadProject(projectId, signal), loadProjectChats(projectId, signal)]);
+      const [projectValue, list] = await Promise.all([loadProject(projectId), loadProjectChats(projectId)]);
       const nextID = chatId && list.items.some((item) => item.id === chatId) ? chatId : list.items[0]?.id ?? "";
-      const page = nextID ? await loadConversation(nextID, undefined, signal) : null;
+      const page = nextID ? await loadConversation(nextID) : null;
+      if (workspaceRequestRef.current !== requestID) return;
       setProject(projectValue); setChats(list.items); setSelectedId(nextID); setChat(page); setState("ready");
       requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: "end" }));
     } catch (reason) {
-      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      if (workspaceRequestRef.current !== requestID) return;
       setError(reason instanceof ProjectApiError && reason.status === 404 ? "Проект или чат не найден" : reason instanceof Error ? reason.message : "Не удалось загрузить чаты проекта"); setState("error");
     }
   }, [chatId, loadConversation, projectId]);
 
-  useEffect(() => { const controller = new AbortController(); queueMicrotask(() => { if (!controller.signal.aborted) void loadWorkspace(controller.signal); }); return () => controller.abort(); }, [loadWorkspace]);
+  useEffect(() => {
+    const workspaceKey = `${projectId}:${chatId ?? ""}`;
+    if (workspaceKeyRef.current === workspaceKey) return;
+    workspaceKeyRef.current = workspaceKey;
+    void loadWorkspace();
+  }, [chatId, loadWorkspace, projectId]);
 
   useEffect(() => {
     if (state !== "ready") return;

@@ -111,4 +111,13 @@ describe("AccountProjectsPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Повторить" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Не удалось загрузить проекты");
   });
+
+  it("shows a retry transport error without hiding its useful message", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(response({ error: { message: "Временная ошибка" } }, 503))
+      .mockRejectedValueOnce(new Error("Сеть недоступна"));
+    render(<AccountProjectsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "Повторить" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Сеть недоступна");
+  });
 });

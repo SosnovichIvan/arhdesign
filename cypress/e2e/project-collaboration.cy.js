@@ -13,7 +13,7 @@ describe("Проект — чаты и документация", () => {
   it("создаёт именованный чат и показывает несколько чатов слева", () => {
     const chats = [chat];
     cy.intercept("GET", `/api/v1/projects/${projectId}/chats`, (request) => request.reply({ statusCode: 200, body: { canCreate: true, items: chats } }));
-    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/*?*`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/*?pageSize=50`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
     cy.intercept("POST", `/api/v1/projects/${projectId}/chats`, (request) => {
       expect(request.body.name).to.equal("Согласование кухни");
       const created = { ...chat, id: "00000000-0000-0000-0000-000000000021", name: request.body.name };
@@ -30,7 +30,7 @@ describe("Проект — чаты и документация", () => {
   it("добавляет участника, показывает непрочитанные и удаляет чат", () => {
     const candidate = { ...member, firstName: "Иван", lastName: "Петров", login: "ivan", removable: true, userId: "00000000-0000-0000-0000-000000000002" };
     cy.intercept("GET", `/api/v1/projects/${projectId}/chats`, { statusCode: 200, body: { canCreate: true, items: [{ ...chat, unreadCount: 2 }] } });
-    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${chat.id}?*`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${chat.id}?pageSize=50`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
     cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${chat.id}/members`, { statusCode: 200, body: { canManage: true, items: [member] } });
     cy.intercept("GET", `/api/v1/projects/${projectId}/members`, { statusCode: 200, body: { canManage: true, items: [member, candidate] } });
     cy.intercept("POST", `/api/v1/projects/${projectId}/chats/${chat.id}/members`, (request) => { expect(request.body.userId).to.equal(candidate.userId); request.reply({ statusCode: 201, body: candidate }); }).as("addChatMember");
@@ -53,7 +53,7 @@ describe("Проект — чаты и документация", () => {
   it("на мобильном показывает сначала список, затем чат с возвратом", () => {
     cy.viewport(390, 844);
     cy.intercept("GET", `/api/v1/projects/${projectId}/chats`, { statusCode: 200, body: { canCreate: true, items: [{ ...chat, unreadCount: 3 }] } });
-    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${chat.id}?*`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${chat.id}?pageSize=50`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
     cy.visit(`/account/projects/${projectId}/chat`);
     cy.get('[aria-label="Список чатов"]').should("be.visible").and("contain.text", "3");
     cy.get(`[data-cy="chat-list-item-${chat.id}"]`).click();
@@ -70,7 +70,7 @@ describe("Проект — чаты и документация", () => {
     ] } });
     cy.intercept("POST", `/api/v1/notifications/${notificationId}/read`, { statusCode: 204 }).as("readNotification");
     cy.intercept("GET", `/api/v1/projects/${projectId}/chats`, { statusCode: 200, body: { canCreate: true, items: [chat] } });
-    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${chat.id}?*`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${chat.id}?pageSize=50`, { statusCode: 200, body: { canSend: true, chatId: chat.id, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
     cy.visit(`/account/projects/${projectId}/chat/${chat.id}`);
     cy.get('button[aria-label="Уведомления, непрочитанных: 3"]').click();
     cy.contains("a", "Изменение задачи").should("have.attr", "href", `/account/projects/${projectId}/tasks`);

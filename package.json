@@ -16,7 +16,8 @@
     "test": "vitest run --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "test:ui": "start-server-and-test 'npm run dev -- --hostname 127.0.0.1 --port 3100' http://127.0.0.1:3100 'cypress run'",
+    "test:ui": "npm run build && npm run test:ui:built",
+    "test:ui:built": "start-server-and-test 'npm run start -- --hostname 127.0.0.1 --port 3100' http://127.0.0.1:3100 'cypress run'",
     "test:ui:open": "cypress open",
     "test:qa": "npm run test:coverage && npm run test:ui",
     "lint:openapi": "redocly lint openapi/contact-api.yaml openapi/account-api.yaml",
@@ -31,12 +32,12 @@
     "@hookform/resolvers": "latest",
     "class-variance-authority": "latest",
     "clsx": "latest",
-    "next": "^16.4.0",
+    "next": "^16.4.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hook-form": "latest",
     "tailwind-merge": "latest",
-    "zod": "latest"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

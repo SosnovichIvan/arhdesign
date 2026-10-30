@@ -48,6 +48,12 @@ func (processor *pollingProcessor) ProcessTelegramUpdate(_ context.Context, upda
 	return TelegramReply{ChatID: update.Message.Chat.ID, Text: "Добро пожаловать", Action: "Подписаться"}
 }
 
+type pollingProcessorFunc func(context.Context, TelegramUpdate) TelegramReply
+
+func (function pollingProcessorFunc) ProcessTelegramUpdate(ctx context.Context, update TelegramUpdate) TelegramReply {
+	return function(ctx, update)
+}
+
 func TestTelegramPollerDeletesWebhookProcessesUpdateAndReplies(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	client := &pollingHTTPClient{cancel: cancel}
@@ -71,9 +77,105 @@ func TestTelegramPollerDeletesWebhookProcessesUpdateAndReplies(t *testing.T) {
 }
 
 func TestNewTelegramPollerRequiresDependencies(t *testing.T) {
-	if _, err := NewTelegramPoller("", &pollingHTTPClient{}, &pollingProcessor{}, nil); err == nil {
-		t.Fatal("empty token accepted")
+	for name, arguments := range map[string]struct {
+		token     string
+		client    HTTPClient
+		processor TelegramUpdateProcessor
+	}{
+		"token":     {client: &pollingHTTPClient{}, processor: &pollingProcessor{}},
+		"client":    {token: "test-token", processor: &pollingProcessor{}},
+		"processor": {token: "test-token", client: &pollingHTTPClient{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := NewTelegramPoller(arguments.token, arguments.client, arguments.processor, nil); err == nil {
+				t.Fatal("missing dependency accepted")
+			}
+		})
 	}
+}
+
+func TestTelegramPollerStopsWhenWebhookSetupTransportFailsAndContextIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	client := pollingHTTPClientFunc(func(*http.Request) (*http.Response, error) {
+		cancel()
+		return nil, errors.New("offline")
+	})
+	poller, err := NewTelegramPoller("test-token", client, &pollingProcessor{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller.Run(ctx)
+}
+
+func TestTelegramPollerStopsWhenFetchFailsAndContextIsCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	calls := 0
+	client := pollingHTTPClientFunc(func(request *http.Request) (*http.Response, error) {
+		calls++
+		if strings.HasSuffix(request.URL.Path, "/deleteWebhook") {
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":true}`)), Header: make(http.Header)}, nil
+		}
+		cancel()
+		return nil, errors.New("offline")
+	})
+	poller, err := NewTelegramPoller("test-token", client, &pollingProcessor{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller.Run(ctx)
+	if calls != 2 {
+		t.Fatalf("calls=%d, want 2", calls)
+	}
+}
+
+func TestTelegramPollerContinuesAfterReplyFailureAndAdvancesOffset(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	requestedOffset := ""
+	client := pollingHTTPClientFunc(func(request *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(request.Body)
+		switch {
+		case strings.HasSuffix(request.URL.Path, "/deleteWebhook"):
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":true}`)), Header: make(http.Header)}, nil
+		case strings.HasSuffix(request.URL.Path, "/getUpdates"):
+			if strings.Contains(string(body), `"offset":42`) {
+				requestedOffset = "42"
+				cancel()
+				return nil, errors.New("stop")
+			}
+			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true,"result":[{"update_id":41,"message":{"chat":{"id":99}}}]}`)), Header: make(http.Header)}, nil
+		default:
+			return nil, errors.New("send failed")
+		}
+	})
+	poller, err := NewTelegramPoller("test-token", client, pollingProcessorFunc(func(_ context.Context, update TelegramUpdate) TelegramReply {
+		return TelegramReply{ChatID: update.Message.Chat.ID, Text: "reply"}
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller.Run(ctx)
+	if requestedOffset != "42" {
+		t.Fatalf("next offset was not sent: %q", requestedOffset)
+	}
+}
+
+func TestTelegramPollerSkipsEmptyReply(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	client := pollingHTTPClientFunc(func(request *http.Request) (*http.Response, error) {
+		responseBody := `{"ok":true,"result":true}`
+		if strings.HasSuffix(request.URL.Path, "/getUpdates") {
+			responseBody = `{"ok":true,"result":[{"update_id":1,"message":{"chat":{"id":99}}}]}`
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(responseBody)), Header: make(http.Header)}, nil
+	})
+	poller, err := NewTelegramPoller("test-token", client, pollingProcessorFunc(func(_ context.Context, _ TelegramUpdate) TelegramReply {
+		cancel()
+		return TelegramReply{}
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	poller.Run(ctx)
 }
 
 func TestTelegramPollerCallRejectsTransportAndTelegramErrors(t *testing.T) {
