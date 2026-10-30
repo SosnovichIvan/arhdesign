@@ -44,3 +44,16 @@ API работает в режиме long polling. Все запросы Telegra
 - Секреты доставляются отдельно на целевой узел с правами `0600`; значения не выводятся в CI logs.
 - Deploy SSH идёт по ключу: edge/API напрямую, data — через `ProxyJump arh-api`. Парольная SSH-аутентификация после bootstrap отключается.
 - Порядок обновления: backup → data health → migration → API health → web/edge health → smoke tests.
+
+## DNS cutover
+
+- `designer-svetlana.ru` и `www.designer-svetlana.ru` получают `A`-записи на
+  единственный публичный edge-адрес `193.176.78.228`.
+- В публичной DNS-зоне не публикуются адрес API `45.153.188.63`, private IP API
+  `10.16.0.20` и private IP data `10.16.0.30`.
+- `bot.designer-svetlana.ru` не участвует в новой схеме: Telegram работает через
+  long polling. Старый webhook hostname удаляется после smoke test polling.
+- DNS меняется только после готовности трёх узлов. Старые `A` не оставляются
+  параллельно новым; прежний сервер сохраняется на период наблюдения для отката.
+- Перед изменением проверяются фактические авторитетные NS. После изменения
+  проверяются ответы authoritative/public resolver, TLS, `/readyz`, форма и бот.

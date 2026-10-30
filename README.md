@@ -12,28 +12,23 @@ Production-сайт архитектора и дизайнера интерье�
 Посетитель
   │ HTTPS
   ▼
-Caddy на VPS ───────────────► Next.js 16 (сайт)
-  │                                  │
-  └──── /api/* ─────────────► Go API │
-                                      │
-                               PostgreSQL
-                                      │
-                 уведомление о заявке │
-                                      ▼
-        Cloudflare Worker relay ───► Telegram Bot API ───► подписанные администраторы
-
-Telegram Bot API ── webhook ──► bot.designer-svetlana.ru ──► Caddy ──► Go API
+arh-edge (Caddy + Next.js)
+  │ private network
+  ▼
+arh-api (Go API + workers) ─────► arh-data (PostgreSQL + документы + backup)
+  │
+  └──── закрытый SSH proxy ─────► Telegram Bot API ─────► подписанные пользователи
 ```
 
 | Часть | Технология | Назначение |
 | --- | --- | --- |
 | Интерфейс | Next.js 16, TypeScript, Tailwind | Лендинг, проекты, темы, адаптивное меню, SEO и форма заявки |
-| API | Go | Валидация и сохранение формы, антиспам, Telegram webhook |
+| API | Go | Валидация и сохранение формы, антиспам, Telegram long polling и уведомления |
 | База | PostgreSQL 17 | Заявки, кабинеты, проекты, чаты, технические обращения, подписки и аудит |
 | Reverse proxy | Caddy 2 | HTTPS, выпуск и продление сертификатов, маршрутизация на сайт/API |
 | Контейнеры | Docker Compose | Изолированный запуск всех сервисов на VPS |
 | CI/CD | GitHub Actions | Сборка и публикация релиза по тегу из `main` |
-| DNS/edge | Cloudflare | DNS домена, защищённый relay и проксирование адреса бота |
+| DNS/edge | DNS-провайдер домена + Beget VPS | Публичные записи ведут только на `arh-edge`; Cloudflare proxy не используется |
 
 ## Функциональность
 
@@ -115,7 +110,7 @@ Telegram-шторм. Содержимое запросов, cookie, query string
 | `openapi/contact-api.yaml` | Публичный контракт contact API |
 | `infra/docker-compose.yml` | Production-стек Docker Compose |
 | `infra/Caddyfile` | HTTPS и reverse proxy |
-| `infra/cloudflare/telegram-relay.js` | Исходный код Cloudflare Worker для доставки уведомлений |
+| `infra/cloudflare/telegram-relay.js` | Устаревший relay прежней схемы; в Beget production не используется |
 | `.github/workflows/deploy.yml` | Деплой release-тегов на VPS |
 | `.github/workflows/quality.yml` | Проверки качества в GitHub Actions |
 
@@ -171,16 +166,16 @@ docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compo
 
 ### VPS
 
-Production работает на отдельном VPS. На хосте публичны только `80/tcp` и `443/tcp`; контейнеры Next.js, Go API и PostgreSQL не публикуют собственные порты наружу.
+Production разделён между тремя Beget VPS. Публичной точкой приложения является
+только `arh-edge` с портами `80/tcp` и `443/tcp`; Go API и PostgreSQL обслуживают
+приложение по приватной сети и не публикуют прикладные порты наружу.
 
-| Сервис Compose | Назначение | Доступ |
+| Узел / сервис | Назначение | Доступ |
 | --- | --- | --- |
-| `caddy` | HTTPS и маршрутизация | публичный, 80/443 |
-| `web` | Next.js-сайт | только внутренняя Docker-сеть |
-| `api` | Go API и Telegram webhook | только через Caddy |
-| `postgres` | данные заявок и подписок | только внутренняя Docker-сеть |
-| `migrate` | выполняет SQL-миграции перед API | одноразовый контейнер |
-| `postgres-backup` | ежедневно создаёт сжатую резервную копию PostgreSQL | только внутренняя Docker-сеть и отдельный volume |
+| `arh-edge`: `caddy`, `web` | HTTPS, маршрутизация и Next.js | публичный `193.176.78.228`, 80/443 |
+| `arh-api`: `api`, `telegram-proxy` | Go API, workers и закрытый Telegram tunnel | API только по private network; SSH для администрирования |
+| `arh-data`: `postgres`, `postgres-backup` | данные и резервные копии | только private network, публичного IPv4 нет |
+| `migrate` | выполняет SQL-миграции перед API | одноразовый контейнер на API-узле |
 
 Данные PostgreSQL находятся в именованном Docker volume `postgres_data`. Удалять этот volume нельзя без резервной копии.
 
@@ -213,30 +208,49 @@ Production работает на отдельном VPS. На хосте пуб�
 
 ### Домен, DNS и HTTPS
 
-Текущая production-схема для `designer-svetlana.ru`:
+Целевая production-схема после перехода на Beget:
 
 | Имя | Тип | Значение | Режим | Зачем |
 | --- | --- | --- | --- | --- |
-| `designer-svetlana.ru` | `A` | публичный IPv4 VPS | DNS only | основной сайт доступен без Cloudflare proxy |
-| `www.designer-svetlana.ru` | `A` | публичный IPv4 VPS | DNS only | альтернативный адрес сайта |
-| `bot.designer-svetlana.ru` | `A` | публичный IPv4 VPS | Proxied | стабильный HTTPS webhook для Telegram |
-| NS домена | Cloudflare nameservers | назначенные Cloudflare NS | — | Cloudflare управляет DNS-зоной |
+| `designer-svetlana.ru` | `A` | `193.176.78.228` | только DNS | основной сайт на `arh-edge` |
+| `www.designer-svetlana.ru` | `A` | `193.176.78.228` | только DNS | альтернативный адрес сайта |
 
-Основной домен и `www` специально оставлены в режиме **DNS only**, чтобы не завязывать доступность сайта из России на CDN-proxy Cloudflare. Caddy на VPS получает и обновляет TLS-сертификаты автоматически через Let's Encrypt.
+Публичные DNS-записи не должны указывать на `arh-api` (`45.153.188.63`) или
+`arh-data` (`10.16.0.30`). Запись `bot.designer-svetlana.ru` новой схеме не
+нужна: бот получает обновления через long polling и закрытый proxy. Старую запись
+бота удаляют только после проверки production polling.
 
-Для Telegram webhook в Cloudflare следует оставить режим SSL/TLS **Full (strict)**. При изменении DNS дождитесь распространения записей, прежде чем проверять сертификат.
+### Порядок DNS-переключения
+
+1. До релиза определить авторитетные NS командой `dig NS designer-svetlana.ru`
+   через внешний DNS-resolver и вносить изменения именно в эту зону. Наличие
+   домена в панели регистратора само по себе не доказывает, что зона управляется там.
+2. Если панель позволяет, минимум за один текущий TTL уменьшить TTL записей
+   `@` и `www` до `300` секунд.
+3. Развернуть все три узла и проверить edge/API по временной записи или с
+   переопределением адреса на клиенте. До переключения не удалять старый VPS.
+4. Заменить старые `A` для `@` и `www` на `193.176.78.228`. Не оставлять рядом
+   старый IPv4: DNS round-robin будет направлять часть пользователей на старый сайт.
+5. Проверить ответы авторитетных NS, затем публичных resolver, HTTPS, `/readyz`,
+   авторизацию, контактную форму и Telegram long polling.
+6. Сохранять старый сервер в течение окна наблюдения. При критической ошибке
+   вернуть прежние `A`; после стабилизации вернуть обычный TTL и вывести старый
+   сервер из эксплуатации.
+
+Cloudflare proxy для сайта и Telegram в целевой схеме не используется. Caddy на
+`arh-edge` получает и обновляет TLS-сертификаты автоматически через Let's Encrypt.
 
 ### Caddy
 
 В runtime `.env`:
 
 ```dotenv
-CADDY_SITE=www.designer-svetlana.ru
+CADDY_SITE=designer-svetlana.ru, www.designer-svetlana.ru
 NEXT_PUBLIC_SITE_URL=https://designer-svetlana.ru
-TELEGRAM_WEBHOOK_HOST=bot.designer-svetlana.ru
 ```
 
-Workflow добавляет `designer-svetlana.ru` как алиас к `CADDY_SITE`, поэтому Caddy обслуживает основной домен, `www` и hostname бота. `CADDY_SITE` содержит доменные имена **без** `https://`; `NEXT_PUBLIC_SITE_URL` — полный canonical URL с `https://`.
+`CADDY_SITE` содержит оба доменных имени без `https://`; `NEXT_PUBLIC_SITE_URL`
+— полный canonical URL с `https://`. Отдельный hostname Telegram-бота не нужен.
 
 ## Конфигурация и секреты
 
@@ -323,23 +337,20 @@ SMTP_PASSWORD
 EMAIL_FROM
 EMAIL_TO
 TELEGRAM_BOT_TOKEN
-TELEGRAM_PROXY_REMOTE_HOST
-TELEGRAM_PROXY_REMOTE_PORT
-TELEGRAM_PROXY_SSH_HOST
-TELEGRAM_PROXY_SSH_PORT
-TELEGRAM_PROXY_SSH_USER
+BEGET_API_HOST
+BEGET_DATA_HOST
+BEGET_DEPLOY_SSH_KEY
+BEGET_EDGE_HOST
+BEGET_SSH_PORT
+BEGET_SSH_USER
 TECH_ADMIN_EMAIL
 TECH_ADMIN_PASSWORD
 TECH_ADMIN_USERNAME
-VPS_DEPLOY_PATH
-VPS_HOST
-VPS_PASSWORD
-VPS_PORT
-VPS_SSH_AUTH_METHOD
-VPS_USER
 ```
 
-Текущий workflow ожидает `VPS_SSH_AUTH_METHOD=password`. Это рабочая схема, но для следующего этапа безопасности рекомендуется перейти на отдельного deploy-пользователя и SSH private key в GitHub Secret.
+Workflow использует отдельный SSH-ключ `BEGET_DEPLOY_SSH_KEY`: edge и API
+доступны напрямую, data — через `ProxyJump` на API. Парольная SSH-аутентификация
+в release workflow не используется.
 
 ### Telegram через закрытый proxy
 
@@ -375,12 +386,18 @@ Workflow [`deploy.yml`](.github/workflows/deploy.yml) выполняет сле�
 
 1. Проверяет, что tag-коммит входит в `main`.
 2. Собирает неизменяемые Docker images фронтенда, API и backup в GitHub Actions.
-3. Передаёт images и runtime-конфигурацию на VPS по SSH.
-4. На VPS получает ровно tag-коммит, загружает images и создаёт `.env.next` с правами `600`.
-5. До миграций создаёт проверяемую локальную и зашифрованную S3-копию текущей БД; сбой backup прекращает релиз.
-6. Атомарно активирует `.env`, применяет additive migrations и запускает `docker compose ... up -d --no-build --wait`.
-7. Настраивает Telegram webhook и команды `/start`, `/menu` через Bot API.
-8. Проверяет, что Telegram подтверждает ожидаемый URL webhook.
+3. Создаёт отдельные runtime-конфигурации edge, API и data без вывода секретов.
+4. Подключается к edge/API по SSH, а к data — через `ProxyJump` на API.
+5. Перед обновлением data запускает backup; затем последовательно обновляет data,
+   API и edge и ждёт healthchecks каждого узла.
+6. API запускает Telegram в режиме long polling через закрытый SSH proxy; webhook
+   и публичный hostname бота не настраиваются.
+7. Выполняет smoke test публичного сайта и `/readyz`.
+
+Для самого первого релиза на новом edge публичный smoke test становится
+подтверждением только после DNS cutover. До него состояние контейнеров проверяется
+на каждом узле, а после смены `A` обязательно повторяются внешний HTTPS smoke test,
+авторизация, отправка формы и тестовое событие Telegram.
 
 Полный preflight, migration, rollback и security runbook:
 [`docs/operations/r1-deployment-runbook.md`](docs/operations/r1-deployment-runbook.md).
