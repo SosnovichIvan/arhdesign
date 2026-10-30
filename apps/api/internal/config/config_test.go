@@ -99,23 +99,26 @@ func TestMonitoringScheduleConfiguration(t *testing.T) {
 	}
 }
 
-func TestTelegramRelayConfiguration(t *testing.T) {
+func TestTelegramProxyConfiguration(t *testing.T) {
 	valid := map[string]string{
-		"ADMIN_PASSWORD":          "password",
-		"ADMIN_USERNAME":          "admin",
-		"TELEGRAM_BOT_TOKEN":      "token",
-		"TELEGRAM_RELAY_SECRET":   "relay-secret",
-		"TELEGRAM_RELAY_URL":      "https://relay.example.com/sendMessage",
-		"TELEGRAM_WEBHOOK_SECRET": "webhook-secret",
+		"ADMIN_PASSWORD":       "password",
+		"ADMIN_USERNAME":       "admin",
+		"TELEGRAM_BOT_TOKEN":   "token",
+		"TELEGRAM_PROXY_URL":   "http://telegram-proxy:19840",
+		"TELEGRAM_UPDATE_MODE": "polling",
 	}
 	configuration, err := Load(func(key string) string { return valid[key] })
-	if err != nil || configuration.TelegramRelayURL != valid["TELEGRAM_RELAY_URL"] {
+	if err != nil || configuration.TelegramProxyURL != valid["TELEGRAM_PROXY_URL"] || configuration.TelegramUpdateMode != "polling" {
 		t.Fatalf("config = %#v, err = %v", configuration, err)
 	}
 	for name, mutate := range map[string]func(map[string]string){
-		"missing relay secret": func(values map[string]string) { delete(values, "TELEGRAM_RELAY_SECRET") },
-		"missing bot token":    func(values map[string]string) { delete(values, "TELEGRAM_BOT_TOKEN") },
-		"non-HTTPS URL":        func(values map[string]string) { values["TELEGRAM_RELAY_URL"] = "http://relay.example.com/sendMessage" },
+		"missing bot token": func(values map[string]string) { delete(values, "TELEGRAM_BOT_TOKEN") },
+		"HTTPS proxy":       func(values map[string]string) { values["TELEGRAM_PROXY_URL"] = "https://proxy.example.com:19840" },
+		"credentials": func(values map[string]string) {
+			values["TELEGRAM_PROXY_URL"] = "http://user:pass@proxy.example.com:19840"
+		},
+		"path":             func(values map[string]string) { values["TELEGRAM_PROXY_URL"] = "http://proxy.example.com:19840/api" },
+		"unsupported mode": func(values map[string]string) { values["TELEGRAM_UPDATE_MODE"] = "relay" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			values := make(map[string]string, len(valid))
@@ -127,6 +130,21 @@ func TestTelegramRelayConfiguration(t *testing.T) {
 				t.Fatal("invalid relay configuration must fail")
 			}
 		})
+	}
+
+	webhook := map[string]string{
+		"ADMIN_PASSWORD":          "password",
+		"ADMIN_USERNAME":          "admin",
+		"TELEGRAM_BOT_TOKEN":      "token",
+		"TELEGRAM_UPDATE_MODE":    "webhook",
+		"TELEGRAM_WEBHOOK_SECRET": "secret",
+	}
+	if _, err := Load(func(key string) string { return webhook[key] }); err != nil {
+		t.Fatalf("valid webhook compatibility mode rejected: %v", err)
+	}
+	delete(webhook, "TELEGRAM_WEBHOOK_SECRET")
+	if _, err := Load(func(key string) string { return webhook[key] }); err == nil {
+		t.Fatal("webhook mode without secret must fail")
 	}
 }
 

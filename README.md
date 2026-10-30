@@ -265,18 +265,18 @@ Workflow добавляет `designer-svetlana.ru` как алиас к `CADDY_S
 | `SMTP_ADDRESS`, `SMTP_USERNAME`, `SMTP_PASSWORD` | Go API | SMTP transport писем регистрации и восстановления; порт `465` использует implicit TLS, остальные порты требуют STARTTLS перед авторизацией |
 | `EMAIL_FROM` | Go API | отправитель писем кабинета |
 | `EMAIL_TO` | Go API | получатель уведомлений публичной контактной формы |
-| `TELEGRAM_BOT_TOKEN` | Go API, Cloudflare Worker, deploy | доступ к Telegram Bot API |
+| `TELEGRAM_BOT_TOKEN` | Go API | доступ к Telegram Bot API |
 | `TELEGRAM_BOT_USERNAME` | Go API | публичное имя бота без `@`; для production — `polismakovaSvetlanaBot`, используется для deep link `https://t.me/polismakovaSvetlanaBot?start=register` |
-| `TELEGRAM_WEBHOOK_HOST` | Caddy, deploy | поддомен endpoint’а `/api/telegram/webhook` |
-| `TELEGRAM_WEBHOOK_SECRET` | Go API, Telegram | проверка, что webhook пришёл от Telegram |
+| `TELEGRAM_UPDATE_MODE` | Go API | `polling` в production; `webhook` оставлен только как совместимый режим |
+| `TELEGRAM_PROXY_URL` | Go API | закрытый HTTP endpoint SSH-туннеля, production: `http://telegram-proxy:19840` |
+| `TELEGRAM_PROXY_SSH_*`, `TELEGRAM_PROXY_REMOTE_*` | proxy-контейнер | SSH endpoint и разрешённая цель Squid; private key хранится отдельным файлом на API VPS |
+| `TELEGRAM_WEBHOOK_SECRET` | Go API | нужен только при явном `TELEGRAM_UPDATE_MODE=webhook` |
 | `TELEGRAM_NOTIFICATION_RETENTION_HOURS` | Go API | срок хранения копии заявки в Telegram; от 1 до 24 часов |
 | `ADMIN_USERNAME` | Go API | логин администратора бота |
 | `ADMIN_PASSWORD` | Go API | пароль администратора бота |
 | `TECH_ADMIN_USERNAME` | Go API | логин единственной активной технической учётной записи; задаётся секретом |
 | `TECH_ADMIN_EMAIL` | Go API | уникальная почта технической учётной записи |
 | `TECH_ADMIN_PASSWORD` | Go API | отдельный пароль единственной системной учётной записи `technical_admin`; для неё действует исключение — минимум 14 символов, пароль не коммитится; обычная регистрация требует минимум 15 |
-| `TELEGRAM_RELAY_URL` | Go API | URL Worker `/sendMessage` |
-| `TELEGRAM_RELAY_SECRET` | Go API, Worker | авторизация API перед relay |
 | `RELEASE_IMAGE_TAG` | Compose | точная версия Docker images для релиза |
 | `BACKUP_LOCAL_RETENTION_DAYS`, `BACKUP_INTERVAL_SECONDS` | backup-контейнер | локальная ретенция (7 дней) и интервал (24 часа) |
 | `OFFSITE_BACKUP_ENABLED` | backup-контейнер | обязательное включение Restic/S3 в production |
@@ -323,10 +323,11 @@ SMTP_PASSWORD
 EMAIL_FROM
 EMAIL_TO
 TELEGRAM_BOT_TOKEN
-TELEGRAM_RELAY_SECRET
-TELEGRAM_RELAY_URL
-TELEGRAM_WEBHOOK_HOST
-TELEGRAM_WEBHOOK_SECRET
+TELEGRAM_PROXY_REMOTE_HOST
+TELEGRAM_PROXY_REMOTE_PORT
+TELEGRAM_PROXY_SSH_HOST
+TELEGRAM_PROXY_SSH_PORT
+TELEGRAM_PROXY_SSH_USER
 TECH_ADMIN_EMAIL
 TECH_ADMIN_PASSWORD
 TECH_ADMIN_USERNAME
@@ -340,17 +341,13 @@ VPS_USER
 
 Текущий workflow ожидает `VPS_SSH_AUTH_METHOD=password`. Это рабочая схема, но для следующего этапа безопасности рекомендуется перейти на отдельного deploy-пользователя и SSH private key в GitHub Secret.
 
-### Cloudflare Worker relay
+### Telegram через закрытый proxy
 
-Worker нужен только для исходящей доставки и последующего удаления уведомления о заявке. Он принимает JSON от Go API, проверяет заголовок `Authorization: Bearer <RELAY_SECRET>` и вызывает разрешённые методы Telegram Bot API: `sendMessage` и `deleteMessage`.
+Production использует long polling и закрытый SSH local-forward до Squid по схеме plannerBot. Контейнер `telegram-proxy` не публикует порт на хост и доступен только API внутри Docker network. Все методы Bot API используют один proxy-aware HTTP client без прямого fallback. Private key и `known_hosts` размещаются на API VPS в `/etc/arhdesign/telegram-proxy` и не попадают в GitHub secrets, `.env` или образ.
 
-- Исходник: [`infra/cloudflare/telegram-relay.js`](infra/cloudflare/telegram-relay.js).
-- URL API должен оканчиваться на `/sendMessage`.
-- В Cloudflare Worker secrets хранятся `TELEGRAM_BOT_TOKEN` и `RELAY_SECRET`.
-- В настройках Worker отключено сохранение invocation logs: текст заявок не должен оставаться в логах edge-платформы.
-- В `.env`/GitHub `TELEGRAM_RELAY_SECRET` должен совпадать с Worker `RELAY_SECRET`.
+В трёхузловой схеме Beget приватный `arh-data` не имеет default route. Системные обновления и Docker pull выполняются через закрытый Tinyproxy `10.16.0.20:8888` на `arh-api`; порт разрешён firewall только для `10.16.0.30` и не публикуется в интернет. Это эксплуатационный egress для data-узла, а не proxy пользовательского или Telegram-трафика.
 
-Relay не хранит заявку: он передаёт только `chat_id`, текст уведомления и, при удалении, `message_id`. Сама заявка прежде сохраняется на VPS в PostgreSQL. Worker invocation logs должны оставаться отключёнными.
+Подробная топология трёх Beget VPS, стоимость и сетевые границы: [`docs/architecture/beget-three-vps.md`](docs/architecture/beget-three-vps.md).
 
 ### SMTP REG.RU
 
@@ -559,7 +556,7 @@ docker compose --env-file .env -f infra/docker-compose.yml run --rm \
 
 1. Данные формы сохраняются в PostgreSQL на VPS в России. В `contact_submissions` находятся имя, телефон или email, тип и необязательное описание проекта. В `contact_consents` сохраняется проверяемое доказательство согласия: факт, способ, точный текст, версия, путь и SHA-256 документа, URL страницы и серверное время.
 2. До отправки форма требует отдельного, заранее не отмеченного checkbox. Рядом доступны [политика обработки персональных данных](/privacy) и полный [текст согласия](public/documents/personal-data-consent-2026-09-19-v4.pdf), открываемый в новой вкладке.
-3. Уведомление передаётся администратору через Cloudflare Worker в Telegram. Relay не хранит заявку, а сообщение в Telegram автоматически удаляется ботом не позднее чем через 24 часа.
+3. Уведомление передаётся администратору в Telegram через закрытый proxy-туннель с API VPS. Промежуточный Cloudflare Worker не используется; сообщение в Telegram автоматически удаляется ботом не позднее чем через 24 часа.
 4. Заявки и связанные согласия хранятся до 365 дней; резервные копии PostgreSQL и access-логи Caddy — до 30 дней; cooldown формы — один час. Сроки настраиваются через `.env` в пределах, разрешённых API.
 5. При удалении заявки связанная запись согласия удаляется каскадно. Просроченные cooldown и Telegram receipts также очищаются автоматически.
 
@@ -579,8 +576,8 @@ docker compose --env-file .env -f infra/docker-compose.yml run --rm \
 | Сайт не открывается | DNS `A`, порты 80/443, `docker compose ps`, логи Caddy |
 | Не выпускается TLS | DNS уже указывает на VPS, домен не закрыт другим proxy, логи `caddy` |
 | Форма отвечает ошибкой | `api` logs, доступность PostgreSQL, cooldown/rate limit |
-| Заявка сохранилась, но Telegram молчит | число активных подписчиков, `TELEGRAM_RELAY_*`, Worker secrets, API logs |
-| `/start` не отвечает | DNS/proxy `bot` hostname, webhook status Bot API, `TELEGRAM_WEBHOOK_SECRET`, логи API |
+| Заявка сохранилась, но Telegram молчит | число активных подписчиков, health контейнера `telegram-proxy`, SSH tunnel и API logs |
+| `/start` не отвечает | `TELEGRAM_UPDATE_MODE=polling`, health proxy, `getWebhookInfo` должен иметь пустой URL, логи API |
 | PostgreSQL не принимает подключения | свободное место `df -h /`, логи `postgres`, Docker build cache |
 
 ## Источники истины
@@ -588,7 +585,8 @@ docker compose --env-file .env -f infra/docker-compose.yml run --rm \
 - [`openapi/contact-api.yaml`](openapi/contact-api.yaml) — публичный контракт формы.
 - [`infra/docker-compose.yml`](infra/docker-compose.yml) — фактический runtime-стек.
 - [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) — механизм release-деплоя.
-- [`infra/cloudflare/telegram-relay.js`](infra/cloudflare/telegram-relay.js) — логика relay.
+- [`infra/telegram-proxy`](infra/telegram-proxy) — закрытый SSH tunnel для Telegram transport.
+- [`docs/architecture/beget-three-vps.md`](docs/architecture/beget-three-vps.md) — production-топология Beget и границы трёх узлов.
 - [`docs/architecture/overview.md`](docs/architecture/overview.md) — архитектурные ориентиры.
 - [`docs/architecture/client-cabinet-release-plan.md`](docs/architecture/client-cabinet-release-plan.md) — семь версий личного кабинета, пользовательские пути, Cypress и quality gates.
 - [`docs/releases/client-cabinet/README.md`](docs/releases/client-cabinet/README.md) — исполняемые списки задач `0.2.0`–`0.8.0` со стабильными ID, зависимостями и приёмкой.

@@ -7,137 +7,177 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ACCOUNT_TOKEN_HMAC_SECRET: ${{ secrets.ACCOUNT_TOKEN_HMAC_SECRET }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
+      BEGET_API_HOST: ${{ secrets.BEGET_API_HOST }}
+      BEGET_DATA_HOST: ${{ secrets.BEGET_DATA_HOST }}
+      BEGET_EDGE_HOST: ${{ secrets.BEGET_EDGE_HOST }}
+      BEGET_SSH_PORT: ${{ secrets.BEGET_SSH_PORT }}
+      BEGET_SSH_USER: ${{ secrets.BEGET_SSH_USER }}
+      CADDY_SITE: ${{ secrets.CADDY_SITE }}
+      COOLDOWN_HMAC_SECRET: ${{ secrets.COOLDOWN_HMAC_SECRET }}
+      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      OUTBOX_ENCRYPTION_KEY: ${{ secrets.OUTBOX_ENCRYPTION_KEY }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      SMTP_ADDRESS: ${{ secrets.SMTP_ADDRESS }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+      TECH_ADMIN_EMAIL: ${{ secrets.TECH_ADMIN_EMAIL }}
+      TECH_ADMIN_PASSWORD: ${{ secrets.TECH_ADMIN_PASSWORD }}
+      TECH_ADMIN_USERNAME: ${{ secrets.TECH_ADMIN_USERNAME }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
+      TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Verify tag belongs to main
+
+      - name: Verify immutable release tag
         run: |
+          set -eu
           printf '%s' "$GITHUB_REF_NAME" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
-      - name: Install SSH password helper
-        run: sudo apt-get update && sudo apt-get install -y sshpass
+
       - name: Build release images
-        env:
-          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
         run: |
+          set -eu
           docker build --build-arg NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" --tag arhdesign-web:"$GITHUB_SHA" .
           docker build --tag arhdesign-api:"$GITHUB_SHA" apps/api
           docker build --tag arhdesign-postgres-backup:"$GITHUB_SHA" --file infra/backup/Dockerfile infra
-          docker save arhdesign-web:"$GITHUB_SHA" arhdesign-api:"$GITHUB_SHA" arhdesign-postgres-backup:"$GITHUB_SHA" | gzip -1 > arhdesign-images.tar.gz
-      - name: Deploy exact release tag
-        env:
-          ACCOUNT_TOKEN_HMAC_KEY_VERSION: ${{ secrets.ACCOUNT_TOKEN_HMAC_KEY_VERSION }}
-          ACCOUNT_TOKEN_HMAC_SECRET: ${{ secrets.ACCOUNT_TOKEN_HMAC_SECRET }}
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-          BACKUP_AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_AWS_ACCESS_KEY_ID }}
-          BACKUP_AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_AWS_SECRET_ACCESS_KEY }}
-          BACKUP_RESTIC_PASSWORD: ${{ secrets.BACKUP_RESTIC_PASSWORD }}
-          BACKUP_RESTIC_REPOSITORY: ${{ secrets.BACKUP_RESTIC_REPOSITORY }}
-          CADDY_SITE: ${{ secrets.CADDY_SITE }}
-          COOLDOWN_HMAC_SECRET: ${{ secrets.COOLDOWN_HMAC_SECRET }}
-          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
-          OUTBOX_ENCRYPTION_KEY: ${{ secrets.OUTBOX_ENCRYPTION_KEY }}
-          OUTBOX_ENCRYPTION_KEY_VERSION: ${{ secrets.OUTBOX_ENCRYPTION_KEY_VERSION }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          SMTP_ADDRESS: ${{ secrets.SMTP_ADDRESS }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
-          TELEGRAM_RELAY_SECRET: ${{ secrets.TELEGRAM_RELAY_SECRET }}
-          TELEGRAM_RELAY_URL: ${{ secrets.TELEGRAM_RELAY_URL }}
-          TELEGRAM_WEBHOOK_HOST: ${{ secrets.TELEGRAM_WEBHOOK_HOST }}
-          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
-          TECH_ADMIN_EMAIL: ${{ secrets.TECH_ADMIN_EMAIL }}
-          TECH_ADMIN_PASSWORD: ${{ secrets.TECH_ADMIN_PASSWORD }}
-          TECH_ADMIN_USERNAME: ${{ secrets.TECH_ADMIN_USERNAME }}
-          VPS_DEPLOY_PATH: ${{ secrets.VPS_DEPLOY_PATH }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
-          VPS_SSH_AUTH_METHOD: ${{ secrets.VPS_SSH_AUTH_METHOD }}
-          VPS_USER: ${{ secrets.VPS_USER }}
+          docker build --tag arhdesign-telegram-proxy:"$GITHUB_SHA" infra/telegram-proxy
+          docker save arhdesign-web:"$GITHUB_SHA" | gzip -1 > edge-images.tar.gz
+          docker save arhdesign-api:"$GITHUB_SHA" arhdesign-telegram-proxy:"$GITHUB_SHA" | gzip -1 > api-images.tar.gz
+          docker save arhdesign-postgres-backup:"$GITHUB_SHA" | gzip -1 > data-images.tar.gz
+          tar -czf release-files.tar.gz infra/beget apps/api/migrations
+
+      - name: Render per-node configuration
         run: |
-          test "$VPS_SSH_AUTH_METHOD" = "password"
-          test -n "$ACCOUNT_TOKEN_HMAC_SECRET"
-          test -n "$OUTBOX_ENCRYPTION_KEY"
-          test -n "$BACKUP_RESTIC_REPOSITORY"
-          test -n "$BACKUP_RESTIC_PASSWORD"
-          printf '%s\n' \
-            "CADDY_SITE=$CADDY_SITE, designer-svetlana.ru" \
-            "TELEGRAM_WEBHOOK_HOST=$TELEGRAM_WEBHOOK_HOST" \
-            "NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL" \
-            "PUBLIC_ORIGIN=$NEXT_PUBLIC_SITE_URL" \
-            "RELEASE_IMAGE_TAG=$GITHUB_SHA" \
-            "RELEASE_VERSION=$GITHUB_REF_NAME" \
-            "POSTGRES_DB=$POSTGRES_DB" \
-            "POSTGRES_USER=$POSTGRES_USER" \
-            "POSTGRES_PASSWORD=$POSTGRES_PASSWORD" \
-            "COOLDOWN_HMAC_SECRET=$COOLDOWN_HMAC_SECRET" \
-            "CONTACT_RETENTION_DAYS=365" \
-            "ACCOUNT_AUTH_ENABLED=true" \
-            "ACCOUNT_TOKEN_HMAC_SECRET=$ACCOUNT_TOKEN_HMAC_SECRET" \
-            "ACCOUNT_TOKEN_HMAC_KEY_VERSION=${ACCOUNT_TOKEN_HMAC_KEY_VERSION:-1}" \
-            "OUTBOX_ENCRYPTION_KEY=$OUTBOX_ENCRYPTION_KEY" \
-            "OUTBOX_ENCRYPTION_KEY_VERSION=${OUTBOX_ENCRYPTION_KEY_VERSION:-1}" \
-            "MONITORING_TIMEZONE=Europe/Moscow" \
-            "MONITORING_REPORT_HOUR=9" \
-            "MONITORING_BACKUP_DIRECTORY=/var/lib/arhdesign-backups" \
-            "SMTP_ADDRESS=$SMTP_ADDRESS" \
-            "SMTP_USERNAME=$SMTP_USERNAME" \
-            "SMTP_PASSWORD=$SMTP_PASSWORD" \
-            "EMAIL_FROM=$EMAIL_FROM" \
-            "EMAIL_TO=$EMAIL_TO" \
-            "TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN" \
-            "TELEGRAM_BOT_USERNAME=$TELEGRAM_BOT_USERNAME" \
-            "TELEGRAM_WEBHOOK_SECRET=$TELEGRAM_WEBHOOK_SECRET" \
-            "TELEGRAM_NOTIFICATION_RETENTION_HOURS=24" \
-            "TELEGRAM_RELAY_URL=$TELEGRAM_RELAY_URL" \
-            "TELEGRAM_RELAY_SECRET=$TELEGRAM_RELAY_SECRET" \
-            "ADMIN_USERNAME=$ADMIN_USERNAME" \
-            "ADMIN_PASSWORD=$ADMIN_PASSWORD" \
-            "TECH_ADMIN_USERNAME=$TECH_ADMIN_USERNAME" \
-            "TECH_ADMIN_EMAIL=$TECH_ADMIN_EMAIL" \
-            "TECH_ADMIN_PASSWORD=$TECH_ADMIN_PASSWORD" \
-            "BACKUP_LOCAL_RETENTION_DAYS=7" \
-            "BACKUP_INTERVAL_SECONDS=86400" \
-            "OFFSITE_BACKUP_ENABLED=true" \
-            "BACKUP_RESTIC_REPOSITORY=$BACKUP_RESTIC_REPOSITORY" \
-            "BACKUP_RESTIC_PASSWORD=$BACKUP_RESTIC_PASSWORD" \
-            "BACKUP_AWS_ACCESS_KEY_ID=$BACKUP_AWS_ACCESS_KEY_ID" \
-            "BACKUP_AWS_SECRET_ACCESS_KEY=$BACKUP_AWS_SECRET_ACCESS_KEY" \
-            "BACKUP_HOST_ID=arhdesign-production" \
-            "BACKUP_REMOTE_DAILY_RETENTION=30" \
-            "BACKUP_REMOTE_MONTHLY_RETENTION=12" \
-            "BACKUP_CHECK_SUBSET=1/30" | base64 -w 0 > runtime-env.b64
-          export SSHPASS="$VPS_PASSWORD"
-          sshpass -e scp -P "$VPS_PORT" -o StrictHostKeyChecking=accept-new runtime-env.b64 "$VPS_USER@$VPS_HOST:/tmp/arhdesign-env.b64"
-          sshpass -e scp -P "$VPS_PORT" -o StrictHostKeyChecking=accept-new arhdesign-images.tar.gz "$VPS_USER@$VPS_HOST:/tmp/arhdesign-images.tar.gz"
-          sshpass -e ssh -p "$VPS_PORT" -o StrictHostKeyChecking=accept-new "$VPS_USER@$VPS_HOST" "set -eu; if [ ! -d '$VPS_DEPLOY_PATH/.git' ]; then git clone https://github.com/SosnovichIvan/arhdesign.git '$VPS_DEPLOY_PATH'; fi; git -C '$VPS_DEPLOY_PATH' fetch --tags origin; git -C '$VPS_DEPLOY_PATH' checkout --force '$GITHUB_SHA'; base64 -d /tmp/arhdesign-env.b64 > '$VPS_DEPLOY_PATH/.env.next'; chmod 600 '$VPS_DEPLOY_PATH/.env.next'; docker load -i /tmp/arhdesign-images.tar.gz; rm -f /tmp/arhdesign-images.tar.gz; cd '$VPS_DEPLOY_PATH'; if [ -f .env ]; then docker compose --env-file .env.next -f infra/docker-compose.yml run --rm -e BACKUP_RUN_ONCE=true postgres-backup; cp .env .env.previous; chmod 600 .env.previous; fi; mv .env.next .env; docker compose --env-file .env -f infra/docker-compose.yml up -d --no-build --wait --wait-timeout 120; rm -f /tmp/arhdesign-env.b64"
-      - name: Configure Telegram webhook and commands
+          set -eu
+          infra/beget/render-env.py edge edge.env "$GITHUB_SHA" "$GITHUB_REF_NAME"
+          infra/beget/render-env.py api api.env "$GITHUB_SHA" "$GITHUB_REF_NAME"
+          infra/beget/render-env.py data data.env "$GITHUB_SHA" "$GITHUB_REF_NAME"
+
+      - name: Configure deploy SSH client
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_WEBHOOK_HOST: ${{ secrets.TELEGRAM_WEBHOOK_HOST }}
-          TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+          BEGET_DEPLOY_SSH_KEY: ${{ secrets.BEGET_DEPLOY_SSH_KEY }}
         run: |
-          curl --fail --silent --show-error --retry 3 --max-time 30 \
-            --data-urlencode "url=https://$TELEGRAM_WEBHOOK_HOST/api/telegram/webhook" \
-            --data-urlencode "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-            --data-urlencode 'allowed_updates=["message"]' \
-            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" > /dev/null
-          curl --fail --silent --show-error --retry 3 --max-time 30 \
-            -H 'Content-Type: application/json' \
-            --data '{"commands":[{"command":"start","description":"Открыть меню"},{"command":"menu","description":"Показать меню"}]}' \
-            "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setMyCommands" > /dev/null
-          webhook_info="$(curl --fail --silent --show-error --retry 3 --max-time 30 "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo")"
-          printf '%s' "$webhook_info" | jq --exit-status --arg expected_url "https://$TELEGRAM_WEBHOOK_HOST/api/telegram/webhook" '.ok and .result.url == $expected_url' > /dev/null
-          printf '%s' "$webhook_info" | jq '{url: .result.url, pending_update_count: .result.pending_update_count, last_error_date: .result.last_error_date, last_error_message: .result.last_error_message}'
+          set -eu
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$BEGET_DEPLOY_SSH_KEY" > ~/.ssh/arhdesign_beget
+          chmod 0600 ~/.ssh/arhdesign_beget
+          ssh-keygen -y -f ~/.ssh/arhdesign_beget >/dev/null
+          ssh-keyscan -T 10 -p "$BEGET_SSH_PORT" "$BEGET_EDGE_HOST" "$BEGET_API_HOST" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/arhdesign_beget -p "$BEGET_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes "$BEGET_SSH_USER@$BEGET_API_HOST" \
+            "ssh-keyscan -T 10 -p '$BEGET_SSH_PORT' '$BEGET_DATA_HOST'" >> ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host arh-edge
+            HostName $BEGET_EDGE_HOST
+            User $BEGET_SSH_USER
+            Port $BEGET_SSH_PORT
+            IdentityFile ~/.ssh/arhdesign_beget
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          Host arh-api
+            HostName $BEGET_API_HOST
+            User $BEGET_SSH_USER
+            Port $BEGET_SSH_PORT
+            IdentityFile ~/.ssh/arhdesign_beget
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          Host arh-data
+            HostName $BEGET_DATA_HOST
+            User $BEGET_SSH_USER
+            Port $BEGET_SSH_PORT
+            IdentityFile ~/.ssh/arhdesign_beget
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            ProxyJump arh-api
+          EOF
+          chmod 0600 ~/.ssh/config
+
+      - name: Bootstrap hosts
+        run: |
+          set -eu
+          scp infra/beget/bootstrap-host.sh arh-edge:/tmp/bootstrap-host.sh
+          ssh arh-edge "sh /tmp/bootstrap-host.sh edge; rm -f /tmp/bootstrap-host.sh"
+          scp infra/beget/bootstrap-host.sh arh-api:/tmp/bootstrap-host.sh
+          ssh arh-api "sh /tmp/bootstrap-host.sh api; rm -f /tmp/bootstrap-host.sh"
+          scp infra/beget/bootstrap-host.sh arh-data:/tmp/bootstrap-host.sh
+          ssh arh-data "sh /tmp/bootstrap-host.sh data; rm -f /tmp/bootstrap-host.sh"
+
+      - name: Deploy data node
+        run: |
+          set -eu
+          scp release-files.tar.gz data-images.tar.gz data.env arh-data:/tmp/
+          ssh arh-data 'sh -se' <<'REMOTE'
+          set -eu
+          tar -xzf /tmp/release-files.tar.gz -C /opt/arhdesign
+          install -m 0600 /tmp/data.env /etc/arhdesign/data.env
+          docker load -i /tmp/data-images.tar.gz
+          cd /opt/arhdesign
+          if docker ps --format '{{.Names}}' | grep -q 'postgres'; then
+            docker compose --env-file /etc/arhdesign/data.env -f infra/beget/compose-data.yml run --rm -e BACKUP_RUN_ONCE=true postgres-backup
+          fi
+          docker compose --env-file /etc/arhdesign/data.env -f infra/beget/compose-data.yml up -d --no-build --wait --wait-timeout 120
+          rm -f /tmp/release-files.tar.gz /tmp/data-images.tar.gz /tmp/data.env
+          REMOTE
+
+      - name: Deploy API node
+        run: |
+          set -eu
+          scp release-files.tar.gz api-images.tar.gz api.env arh-api:/tmp/
+          ssh arh-api 'sh -se' <<'REMOTE'
+          set -eu
+          test -s /etc/arhdesign/telegram-proxy/id_ed25519
+          test -s /etc/arhdesign/telegram-proxy/known_hosts
+          tar -xzf /tmp/release-files.tar.gz -C /opt/arhdesign
+          install -m 0600 /tmp/api.env /etc/arhdesign/api.env
+          docker load -i /tmp/api-images.tar.gz
+          cd /opt/arhdesign
+          docker compose --env-file /etc/arhdesign/api.env -f infra/beget/compose-api.yml up -d --no-build --wait --wait-timeout 120
+          rm -f /tmp/release-files.tar.gz /tmp/api-images.tar.gz /tmp/api.env
+          REMOTE
+
+      - name: Deploy edge node
+        run: |
+          set -eu
+          scp release-files.tar.gz edge-images.tar.gz edge.env arh-edge:/tmp/
+          ssh arh-edge 'sh -se' <<'REMOTE'
+          set -eu
+          tar -xzf /tmp/release-files.tar.gz -C /opt/arhdesign
+          install -m 0600 /tmp/edge.env /etc/arhdesign/edge.env
+          docker load -i /tmp/edge-images.tar.gz
+          cd /opt/arhdesign
+          docker compose --env-file /etc/arhdesign/edge.env -f infra/beget/compose-edge.yml up -d --no-build --wait --wait-timeout 120
+          rm -f /tmp/release-files.tar.gz /tmp/edge-images.tar.gz /tmp/edge.env
+          REMOTE
+
+      - name: Production smoke test
+        run: |
+          set -eu
+          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 --max-time 20 \
+            "$NEXT_PUBLIC_SITE_URL/" >/dev/null
+          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 --max-time 20 \
+            "$NEXT_PUBLIC_SITE_URL/readyz" >/dev/null

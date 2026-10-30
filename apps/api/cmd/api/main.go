@@ -32,6 +32,11 @@ func main() {
 		slog.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+	telegramHTTPClient, err := notification.NewTelegramHTTPClient(configuration.TelegramProxyURL)
+	if err != nil {
+		slog.Error("Telegram transport initialization failed", "error_class", "telegram_proxy_config")
+		os.Exit(1)
+	}
 	mux := http.NewServeMux()
 	cooldown := service.NewCooldown(time.Now)
 	var retentionStore *repository.Postgres
@@ -44,10 +49,11 @@ func main() {
 		defer pool.Close()
 		retentionStore = repository.NewPostgres(pool)
 	}
-	notifier := notification.NewDispatcher(slog.Default(), 10*time.Second, configuredNotifiers(configuration, retentionStore)...)
+	notifier := notification.NewDispatcher(slog.Default(), 10*time.Second, configuredNotifiers(configuration, retentionStore, telegramHTTPClient)...)
 	contactEndpoint := handler.NewContactEndpoint(cooldown, retentionStore, []byte(configuration.CooldownHMACSecret), service.NewRateLimiter(time.Now, time.Minute), notifier)
 	var emailOutbox *notification.EmailOutbox
 	var telegramAccountOutbox *notification.TelegramAccountOutbox
+	var telegramPoller *notification.TelegramPoller
 	var accountService *account.Service
 	var technicalService *technicalsupport.Service
 	var monitoringService *monitoring.Service
@@ -121,11 +127,17 @@ func main() {
 		}
 	}
 	if configuration.TelegramBotToken != "" && retentionStore != nil {
-		telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", http.DefaultClient)
-		if configuration.TelegramRelayURL != "" {
-			telegramClient = notification.NewTelegramViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, http.DefaultClient)
+		telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", telegramHTTPClient)
+		conversation := handler.NewTelegramConversation(accountService, telegramClient)
+		if configuration.TelegramUpdateMode == "webhook" {
+			mux.Handle("POST /api/telegram/webhook", handler.NewTelegramWebhookWithConversation(configuration.TelegramWebhookSecret, conversation))
+		} else {
+			telegramPoller, err = notification.NewTelegramPoller(configuration.TelegramBotToken, telegramHTTPClient, conversation, slog.Default())
+			if err != nil {
+				slog.Error("Telegram poller initialization failed", "error_class", "telegram_poller_config")
+				os.Exit(1)
+			}
 		}
-		mux.Handle("POST /api/telegram/webhook", handler.NewTelegramWebhook(configuration.TelegramWebhookSecret, accountService, telegramClient))
 		if accountService != nil {
 			telegramAccountOutbox, err = notification.NewTelegramAccountOutbox(retentionStore, accountCipher, telegramClient, slog.Default(), time.Now)
 			if err != nil {
@@ -151,12 +163,12 @@ func main() {
 			go runMonitoring(signalContext, monitoringService)
 		}
 		if configuration.TelegramBotToken != "" {
-			telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", http.DefaultClient)
-			if configuration.TelegramRelayURL != "" {
-				telegramClient = notification.NewTelegramViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, http.DefaultClient)
-			}
+			telegramClient := notification.NewTelegram(configuration.TelegramBotToken, "", telegramHTTPClient)
 			go runTelegramRetentionCleanup(signalContext, notification.NewTelegramRetention(telegramClient, retentionStore))
 		}
+	}
+	if telegramPoller != nil {
+		go telegramPoller.Run(signalContext)
 	}
 	server := &http.Server{Addr: ":" + configuration.Port, Handler: handler.TechnicalIncidentMiddleware(mux, technicalService, slog.Default(), time.Now), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -253,7 +265,7 @@ func runRetentionCleanup(ctx context.Context, store *repository.Postgres, retent
 	}
 }
 
-func configuredNotifiers(configuration config.Config, store *repository.Postgres) []notification.Sender {
+func configuredNotifiers(configuration config.Config, store *repository.Postgres, telegramHTTPClient notification.HTTPClient) []notification.Sender {
 	senders := make([]notification.Sender, 0, 2)
 	if configuration.SMTPAddress != "" && configuration.EmailFrom != "" && configuration.EmailTo != "" {
 		transport := notification.NewSMTPTransport(configuration.SMTPAddress, configuration.SMTPUsername, configuration.SMTPPassword)
@@ -261,13 +273,9 @@ func configuredNotifiers(configuration config.Config, store *repository.Postgres
 	}
 	if configuration.TelegramBotToken != "" && store != nil {
 		retention := time.Duration(configuration.TelegramNotificationRetentionHours) * time.Hour
-		if configuration.TelegramRelayURL != "" {
-			senders = append(senders, notification.NewTelegramSubscribersViaRelay(configuration.TelegramRelayURL, configuration.TelegramRelaySecret, store, http.DefaultClient, retention))
-		} else {
-			senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, http.DefaultClient, retention))
-		}
+		senders = append(senders, notification.NewTelegramSubscribers(configuration.TelegramBotToken, store, telegramHTTPClient, retention))
 	} else if configuration.TelegramBotToken != "" && configuration.TelegramChatID != "" {
-		senders = append(senders, notification.NewTelegram(configuration.TelegramBotToken, configuration.TelegramChatID, http.DefaultClient))
+		senders = append(senders, notification.NewTelegram(configuration.TelegramBotToken, configuration.TelegramChatID, telegramHTTPClient))
 	}
 	return senders
 }

@@ -1,4 +1,4 @@
-{$CADDY_SITE:localhost}, {$TELEGRAM_WEBHOOK_HOST:bot.localhost} {
+{$CADDY_SITE:localhost} {
 	log {
 		output file /data/logs/access.log {
 			roll_size 10mb

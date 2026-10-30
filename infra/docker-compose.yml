@@ -4,6 +4,12 @@ x-logging: &default-logging
     max-file: "5"
     max-size: "10m"
 
+secrets:
+  telegram_proxy_identity:
+    file: ${TELEGRAM_PROXY_IDENTITY_FILE:-/etc/arhdesign/telegram-proxy/id_ed25519}
+  telegram_proxy_known_hosts:
+    file: ${TELEGRAM_PROXY_KNOWN_HOSTS_FILE:-/etc/arhdesign/telegram-proxy/known_hosts}
+
 services:
   caddy:
     image: caddy:2.10-alpine
@@ -17,7 +23,6 @@ services:
         condition: service_healthy
     environment:
       CADDY_SITE: ${CADDY_SITE:-localhost}
-      TELEGRAM_WEBHOOK_HOST: ${TELEGRAM_WEBHOOK_HOST:-bot.localhost}
     ports:
       - "80:80"
       - "443:443"
@@ -81,8 +86,8 @@ services:
       EMAIL_TO: ${EMAIL_TO:-}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
-      TELEGRAM_RELAY_URL: ${TELEGRAM_RELAY_URL:-}
-      TELEGRAM_RELAY_SECRET: ${TELEGRAM_RELAY_SECRET:-}
+      TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-}
+      TELEGRAM_UPDATE_MODE: ${TELEGRAM_UPDATE_MODE:-polling}
       TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
       TELEGRAM_NOTIFICATION_RETENTION_HOURS: ${TELEGRAM_NOTIFICATION_RETENTION_HOURS:-24}
       MONITORING_TIMEZONE: ${MONITORING_TIMEZONE:-Europe/Moscow}
@@ -107,6 +112,38 @@ services:
     restart: unless-stopped
     volumes:
       - postgres_backups:/var/lib/arhdesign-backups:ro
+
+  telegram-proxy:
+    profiles: ["telegram-proxy"]
+    build:
+      context: ./telegram-proxy
+    image: arhdesign-telegram-proxy:${RELEASE_IMAGE_TAG:-latest}
+    cap_drop: ["ALL"]
+    mem_limit: 96m
+    pids_limit: 64
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TELEGRAM_PROXY_LOCAL_PORT: ${TELEGRAM_PROXY_LOCAL_PORT:-19840}
+      TELEGRAM_PROXY_REMOTE_HOST: ${TELEGRAM_PROXY_REMOTE_HOST}
+      TELEGRAM_PROXY_REMOTE_PORT: ${TELEGRAM_PROXY_REMOTE_PORT:-3128}
+      TELEGRAM_PROXY_SSH_HOST: ${TELEGRAM_PROXY_SSH_HOST}
+      TELEGRAM_PROXY_SSH_PORT: ${TELEGRAM_PROXY_SSH_PORT:-22}
+      TELEGRAM_PROXY_SSH_USER: ${TELEGRAM_PROXY_SSH_USER}
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 $${TELEGRAM_PROXY_LOCAL_PORT:-19840}"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    networks:
+      - private
+    restart: unless-stopped
+    secrets:
+      - telegram_proxy_identity
+      - telegram_proxy_known_hosts
+    tmpfs:
+      - /tmp:size=16m,mode=1777
 
   migrate:
     image: postgres:17-alpine

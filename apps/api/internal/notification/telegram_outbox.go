@@ -67,7 +67,7 @@ func (worker *TelegramAccountOutbox) ProcessOne(ctx context.Context) (bool, erro
 		return true, worker.fail(ctx, entry, now, "payload_invalid")
 	}
 	sendContext, cancel := context.WithTimeout(ctx, worker.timeout)
-	messageID, err := worker.telegram.send(sendContext, fmt.Sprint(entry.ChatID), message.Text, false, false)
+	messageID, err := worker.telegram.send(sendContext, fmt.Sprint(entry.ChatID), message.Text, "")
 	cancel()
 	if err != nil {
 		return true, worker.fail(ctx, entry, now, "telegram_unavailable")

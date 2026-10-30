@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -26,8 +27,8 @@ type Config struct {
 	TelegramBotUsername                string
 	TelegramChatID                     string
 	TelegramNotificationRetentionHours int
-	TelegramRelaySecret                string
-	TelegramRelayURL                   string
+	TelegramProxyURL                   string
+	TelegramUpdateMode                 string
 	TelegramWebhookSecret              string
 	AdminUsername                      string
 	AdminPassword                      string
@@ -93,7 +94,7 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	config := Config{
 		AccountTokenHMACSecret: getenv("ACCOUNT_TOKEN_HMAC_SECRET"), AccountTokenHMACKeyVersion: accountTokenKeyVersion,
-		CooldownHMACSecret: getenv("COOLDOWN_HMAC_SECRET"), DatabaseURL: getenv("DATABASE_URL"), EmailFrom: getenv("EMAIL_FROM"), EmailTo: getenv("EMAIL_TO"), Port: getenv("PORT"), RetentionDays: retentionDays, SMTPAddress: getenv("SMTP_ADDRESS"), SMTPPassword: getenv("SMTP_PASSWORD"), SMTPUsername: getenv("SMTP_USERNAME"), TelegramBotToken: getenv("TELEGRAM_BOT_TOKEN"), TelegramBotUsername: getenv("TELEGRAM_BOT_USERNAME"), TelegramChatID: getenv("TELEGRAM_CHAT_ID"), TelegramNotificationRetentionHours: telegramNotificationRetentionHours, TelegramRelaySecret: getenv("TELEGRAM_RELAY_SECRET"), TelegramRelayURL: getenv("TELEGRAM_RELAY_URL"), TelegramWebhookSecret: getenv("TELEGRAM_WEBHOOK_SECRET"), AdminUsername: getenv("ADMIN_USERNAME"), AdminPassword: getenv("ADMIN_PASSWORD"), TechnicalAdminUsername: getenv("TECH_ADMIN_USERNAME"), TechnicalAdminEmail: getenv("TECH_ADMIN_EMAIL"), TechnicalAdminPassword: getenv("TECH_ADMIN_PASSWORD"),
+		CooldownHMACSecret: getenv("COOLDOWN_HMAC_SECRET"), DatabaseURL: getenv("DATABASE_URL"), EmailFrom: getenv("EMAIL_FROM"), EmailTo: getenv("EMAIL_TO"), Port: getenv("PORT"), RetentionDays: retentionDays, SMTPAddress: getenv("SMTP_ADDRESS"), SMTPPassword: getenv("SMTP_PASSWORD"), SMTPUsername: getenv("SMTP_USERNAME"), TelegramBotToken: getenv("TELEGRAM_BOT_TOKEN"), TelegramBotUsername: getenv("TELEGRAM_BOT_USERNAME"), TelegramChatID: getenv("TELEGRAM_CHAT_ID"), TelegramNotificationRetentionHours: telegramNotificationRetentionHours, TelegramProxyURL: getenv("TELEGRAM_PROXY_URL"), TelegramUpdateMode: getenv("TELEGRAM_UPDATE_MODE"), TelegramWebhookSecret: getenv("TELEGRAM_WEBHOOK_SECRET"), AdminUsername: getenv("ADMIN_USERNAME"), AdminPassword: getenv("ADMIN_PASSWORD"), TechnicalAdminUsername: getenv("TECH_ADMIN_USERNAME"), TechnicalAdminEmail: getenv("TECH_ADMIN_EMAIL"), TechnicalAdminPassword: getenv("TECH_ADMIN_PASSWORD"),
 		OutboxEncryptionKeyVersion: outboxKeyVersion, PublicOrigin: getenv("PUBLIC_ORIGIN"), MonitoringTimezone: monitoringTimezone, MonitoringReportHour: monitoringReportHour, MonitoringBackupDirectory: getenv("MONITORING_BACKUP_DIRECTORY"), ReleaseVersion: getenv("RELEASE_VERSION"),
 	}
 	if config.Port == "" {
@@ -108,22 +109,32 @@ func Load(getenv func(string) string) (Config, error) {
 	if config.TelegramChatID != "" && config.TelegramBotToken == "" {
 		return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN is required when TELEGRAM_CHAT_ID is set")
 	}
-	if config.TelegramBotToken != "" && (config.TelegramWebhookSecret == "" || config.AdminUsername == "" || config.AdminPassword == "") {
-		return Config{}, fmt.Errorf("TELEGRAM_WEBHOOK_SECRET, ADMIN_USERNAME and ADMIN_PASSWORD are required with TELEGRAM_BOT_TOKEN")
+	if config.TelegramBotToken != "" && (config.AdminUsername == "" || config.AdminPassword == "") {
+		return Config{}, fmt.Errorf("ADMIN_USERNAME and ADMIN_PASSWORD are required with TELEGRAM_BOT_TOKEN")
 	}
 	if accountEnabled && config.TelegramBotToken != "" && config.TelegramBotUsername == "" {
 		return Config{}, fmt.Errorf("TELEGRAM_BOT_USERNAME is required for account Telegram handoff")
 	}
-	if (config.TelegramRelayURL == "") != (config.TelegramRelaySecret == "") {
-		return Config{}, fmt.Errorf("TELEGRAM_RELAY_URL and TELEGRAM_RELAY_SECRET must be set together")
+	if config.TelegramUpdateMode == "" && config.TelegramBotToken != "" {
+		config.TelegramUpdateMode = "polling"
 	}
-	if config.TelegramRelayURL != "" {
+	if config.TelegramUpdateMode != "" && config.TelegramUpdateMode != "polling" && config.TelegramUpdateMode != "webhook" {
+		return Config{}, fmt.Errorf("TELEGRAM_UPDATE_MODE must be polling or webhook")
+	}
+	if config.TelegramUpdateMode == "webhook" && config.TelegramWebhookSecret == "" {
+		return Config{}, fmt.Errorf("TELEGRAM_WEBHOOK_SECRET is required in webhook mode")
+	}
+	if config.TelegramUpdateMode != "" && config.TelegramBotToken == "" {
+		return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN is required with TELEGRAM_UPDATE_MODE")
+	}
+	if config.TelegramProxyURL != "" {
 		if config.TelegramBotToken == "" {
-			return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN is required with TELEGRAM_RELAY_URL")
+			return Config{}, fmt.Errorf("TELEGRAM_BOT_TOKEN is required with TELEGRAM_PROXY_URL")
 		}
-		relayURL, err := url.ParseRequestURI(config.TelegramRelayURL)
-		if err != nil || relayURL.Scheme != "https" || relayURL.Host == "" {
-			return Config{}, fmt.Errorf("TELEGRAM_RELAY_URL must be a valid HTTPS URL")
+		proxyURL, err := url.ParseRequestURI(config.TelegramProxyURL)
+		validPath := proxyURL != nil && (proxyURL.Path == "" || proxyURL.Path == "/")
+		if err != nil || proxyURL.Scheme != "http" || proxyURL.Hostname() == "" || proxyURL.Port() == "" || proxyURL.User != nil || !validPath || proxyURL.RawQuery != "" || proxyURL.Fragment != "" || strings.ContainsAny(config.TelegramProxyURL, "\r\n\t ") {
+			return Config{}, fmt.Errorf("TELEGRAM_PROXY_URL must be an HTTP host:port without credentials")
 		}
 	}
 	if accountEnabled {

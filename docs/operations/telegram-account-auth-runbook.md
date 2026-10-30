@@ -31,9 +31,9 @@
 | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | Bot API; никогда не логируется |
 | `TELEGRAM_BOT_USERNAME` | `polismakovaSvetlanaBot`, без `@` |
-| `TELEGRAM_WEBHOOK_HOST` | hostname публичного webhook |
-| `TELEGRAM_WEBHOOK_SECRET` | проверка `X-Telegram-Bot-Api-Secret-Token` |
-| `TELEGRAM_RELAY_URL`, `TELEGRAM_RELAY_SECRET` | исходящая relay-доставка, если включена |
+| `TELEGRAM_UPDATE_MODE` | `polling` в production |
+| `TELEGRAM_PROXY_URL` | `http://telegram-proxy:19840`, без прямого fallback |
+| `TELEGRAM_PROXY_SSH_*`, `TELEGRAM_PROXY_REMOTE_*` | закрытый SSH forward до Squid |
 | `ACCOUNT_TOKEN_HMAC_SECRET` | purpose-separated state/reset token hashes |
 | `OUTBOX_ENCRYPTION_KEY` | шифрование payload до отправки |
 
@@ -42,9 +42,8 @@ Token/secret не передают в issue, Telegram, скриншот или s
 
 ## Deployment verification
 
-Release workflow вызывает `setWebhook` с `allowed_updates=["message"]`, задаёт
-команды `/start` и `/menu`, затем сравнивает URL из `getWebhookInfo` с ожидаемым.
-Проверка оператора после deploy:
+При старте poller вызывает `deleteWebhook` без удаления pending updates, затем
+получает только `message` через `getUpdates`. Проверка оператора после deploy:
 
 ```sh
 set -a
@@ -57,19 +56,20 @@ curl --fail --silent --show-error \
        last_error_message: .result.last_error_message}'
 ```
 
-Вывод не содержит token. Ожидается правильный HTTPS URL, отсутствие
-`last_error_message` и уменьшающийся `pending_update_count`.
+Вывод не содержит token. Ожидается пустой `url`, отсутствие
+`last_error_message` и уменьшающийся `pending_update_count`. Контейнер
+`telegram-proxy` должен быть healthy.
 
 ## Диагностика
 
 | Симптом | Проверка | Действие |
 | --- | --- | --- |
-| `/start` молчит | webhook URL/error, DNS/TLS, API health | исправить endpoint/TLS, повторить release webhook step |
+| `/start` молчит | proxy health, SSH tunnel, API health, polling logs | восстановить tunnel; API автоматически продолжит polling |
 | Кнопка открывает не того бота | `TELEGRAM_BOT_USERNAME` и frontend deep link | установить имя без `@`, пересобрать web |
 | Бот не принимает ввод | private chat, state TTL, rate limit | начать `/start register` заново; не отключать limit |
 | Пароль верный, профиль не активирован | account status, Argon2 comparison category, binding uniqueness | проверить allowlisted audit/result; не читать/логировать пароль |
 | Reset не приходит | active binding, recipient status, outbox state/retry | исправить binding/delivery; не создавать ссылку вручную |
-| `pending_update_count` растёт | webhook `5xx`, timeout, secret mismatch | проверить API/Caddy logs без payload, сверить secret rotation |
+| `pending_update_count` растёт | poller не читает updates или proxy недоступен | проверить proxy/API logs без payload и доступность туннеля |
 
 Для проверки связки используется отдельный тестовый account и приватный chat.
 Production credentials пользователя в тест не копируются.
