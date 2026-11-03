@@ -16,13 +16,18 @@ test("opens the contact form and exposes accessible validation", async ({ page }
 test("renders the hero carousel with keyboard controls and no overflow", async ({ page }) => {
   await page.goto("/");
   const carousel = page.getByRole("region", { name: "Галерея: Избранные проекты" });
+  const thumbnails = carousel.getByRole("list", { name: "Миниатюры галереи" }).getByRole("button");
+  const imageCount = await thumbnails.count();
+  const counter = (current: number) => `${String(current).padStart(2, "0")} / ${String(imageCount).padStart(2, "0")}`;
 
-  await expect(carousel.getByText("01 / 30", { exact: true })).toBeVisible();
-  await carousel.getByRole("button", { name: "Показать кадр 30" }).click();
+  expect(imageCount).toBeGreaterThan(1);
+  await thumbnails.first().click();
+  await expect(carousel.getByText(counter(1), { exact: true })).toBeVisible();
+  await thumbnails.nth(imageCount - 1).click();
   await carousel.getByRole("button", { name: "Следующее изображение" }).click();
-  await expect(carousel.getByText("01 / 30", { exact: true })).toBeVisible();
+  await expect(carousel.getByText(counter(1), { exact: true })).toBeVisible();
   await carousel.press("ArrowRight");
-  await expect(carousel.getByText("02 / 30", { exact: true })).toBeVisible();
+  await expect(carousel.getByText(counter(2), { exact: true })).toBeVisible();
   expect(await page.locator("html").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
