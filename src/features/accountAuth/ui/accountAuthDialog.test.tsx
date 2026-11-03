@@ -104,6 +104,7 @@ describe("AccountAuthProvider", () => {
     window.history.replaceState({}, "", "/?auth=register");
     render(<AccountAuthProvider><span>Контент</span></AccountAuthProvider>);
     expect(await screen.findByRole("dialog", { name: "Регистрация" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText("Логин *")).toBe(document.activeElement));
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(window.location.search).toBe(""));
