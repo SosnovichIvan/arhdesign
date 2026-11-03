@@ -35,6 +35,9 @@ for (const viewport of viewports) {
       await expect(dialog).toBeVisible();
       await expect(page.locator('[data-cy="login-identifier"]')).toBeFocused();
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      // Theme tokens change immediately while transition-colors finishes its
+      // visual interpolation. Audit the stable theme, not an in-between frame.
+      await page.waitForTimeout(250);
       const dialogAudit = await new AxeBuilder({ page }).include('[role="dialog"]').analyze();
       expect(dialogAudit.violations, JSON.stringify(dialogAudit.violations, null, 2)).toEqual([]);
       await page.keyboard.press("Escape");
