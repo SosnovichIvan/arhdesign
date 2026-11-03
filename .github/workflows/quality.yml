@@ -36,6 +36,11 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install coverage==7.10.7
       - run: sh -n infra/yandex/bootstrap-host.sh
+      - name: Validate Telegram proxy network contract
+        run: |
+          docker compose --env-file .env.example --profile telegram-proxy \
+            -f infra/docker-compose.yml config --format json \
+            | jq -e '.services["telegram-proxy"].networks.public.gw_priority == 1 and (.services["telegram-proxy"].networks | has("private"))'
       - run: python -m unittest infra/yandex/test_render_env.py infra/beget/test_render_env.py
       - name: Enforce Yandex env renderer branch coverage
         run: |
