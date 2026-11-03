@@ -40,7 +40,7 @@ services:
   web:
     image: arhdesign-web:${RELEASE_IMAGE_TAG:-latest}
     cpus: "1.50"
-    mem_limit: 2g
+    mem_limit: 1536m
     pids_limit: 256
     build:
       args:
@@ -61,7 +61,7 @@ services:
   api:
     image: arhdesign-api:${RELEASE_IMAGE_TAG:-latest}
     cpus: "1.50"
-    mem_limit: 1g
+    mem_limit: 1280m
     pids_limit: 256
     build:
       context: ../apps/api
@@ -169,7 +169,7 @@ services:
   postgres:
     image: postgres:17-alpine
     cpus: "2.00"
-    mem_limit: 4g
+    mem_limit: 3g
     pids_limit: 256
     shm_size: 256m
     command: ["postgres", "-c", "max_connections=${POSTGRES_MAX_CONNECTIONS:-80}", "-c", "shared_buffers=${POSTGRES_SHARED_BUFFERS:-1GB}"]
@@ -192,7 +192,7 @@ services:
   postgres-backup:
     image: arhdesign-postgres-backup:${RELEASE_IMAGE_TAG:-latest}
     cpus: "0.75"
-    mem_limit: 768m
+    mem_limit: 512m
     pids_limit: 128
     build:
       context: .

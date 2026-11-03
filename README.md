@@ -337,28 +337,29 @@ SMTP_PASSWORD
 EMAIL_FROM
 EMAIL_TO
 TELEGRAM_BOT_TOKEN
-BEGET_API_HOST
-BEGET_DATA_HOST
-BEGET_DEPLOY_SSH_KEY
-BEGET_EDGE_HOST
-BEGET_SSH_PORT
-BEGET_SSH_USER
+TELEGRAM_BOT_USERNAME
+TELEGRAM_WEBHOOK_SECRET
+YANDEX_DEPLOY_SSH_KEY
+YANDEX_HOST
+YANDEX_SSH_PORT
+YANDEX_SSH_USER
 TECH_ADMIN_EMAIL
 TECH_ADMIN_PASSWORD
 TECH_ADMIN_USERNAME
 ```
 
-Workflow использует отдельный SSH-ключ `BEGET_DEPLOY_SSH_KEY`: edge и API
-доступны напрямую, data — через `ProxyJump` на API. Парольная SSH-аутентификация
-в release workflow не используется.
+Workflow использует отдельный SSH-ключ `YANDEX_DEPLOY_SSH_KEY` и подключается к
+единственной production-ВМ Yandex Cloud. Парольная SSH-аутентификация в release
+workflow не используется. PostgreSQL, API, frontend, backup и Telegram proxy
+изолированы Docker networks; наружу публикуются только Caddy `80/443` и SSH.
 
 ### Telegram через закрытый proxy
 
-Production использует long polling и закрытый SSH local-forward до Squid по схеме plannerBot. Контейнер `telegram-proxy` не публикует порт на хост и доступен только API внутри Docker network. Все методы Bot API используют один proxy-aware HTTP client без прямого fallback. Private key и `known_hosts` размещаются на API VPS в `/etc/arhdesign/telegram-proxy` и не попадают в GitHub secrets, `.env` или образ.
+Production использует long polling и закрытый SSH local-forward до Squid по схеме plannerBot. Контейнер `telegram-proxy` не публикует порт на хост и доступен только API внутри Docker network. Все методы Bot API используют один proxy-aware HTTP client без прямого fallback. Private key и `known_hosts` размещаются на production-ВМ в `/etc/arhdesign/telegram-proxy` и не попадают в GitHub secrets, `.env` или образ.
 
-В трёхузловой схеме Beget приватный `arh-data` не имеет default route. Системные обновления и Docker pull выполняются через закрытый Tinyproxy `10.16.0.20:8888` на `arh-api`; порт разрешён firewall только для `10.16.0.30` и не публикуется в интернет. Это эксплуатационный egress для data-узла, а не proxy пользовательского или Telegram-трафика.
-
-Подробная топология трёх Beget VPS, стоимость и сетевые границы: [`docs/architecture/beget-three-vps.md`](docs/architecture/beget-three-vps.md).
+После аварийной миграции production размещается на одной ВМ Yandex Cloud.
+Подробная конфигурация, стоимость, backup, cutover и путь разделения на узлы:
+[`docs/architecture/yandex-cloud-migration.md`](docs/architecture/yandex-cloud-migration.md).
 
 ### SMTP REG.RU
 
@@ -386,18 +387,19 @@ Workflow [`deploy.yml`](.github/workflows/deploy.yml) выполняет сле�
 
 1. Проверяет, что tag-коммит входит в `main`.
 2. Собирает неизменяемые Docker images фронтенда, API и backup в GitHub Actions.
-3. Создаёт отдельные runtime-конфигурации edge, API и data без вывода секретов.
-4. Подключается к edge/API по SSH, а к data — через `ProxyJump` на API.
-5. Перед обновлением data запускает backup; затем последовательно обновляет data,
-   API и edge и ждёт healthchecks каждого узла.
+3. Создаёт единый runtime env без вывода секретов.
+4. Подключается по SSH-ключу к production-ВМ Yandex Cloud.
+5. Перед обновлением существующей БД запускает backup, затем обновляет весь
+   single-node Compose и ждёт healthchecks сервисов.
 6. API запускает Telegram в режиме long polling через закрытый SSH proxy; webhook
    и публичный hostname бота не настраиваются.
-7. Выполняет smoke test публичного сайта и `/readyz`.
+7. До DNS cutover выполняет внутренние smoke tests frontend, API и Caddy; после
+   cutover оператор отдельно проверяет публичные HTTPS `/` и `/readyz`.
 
-Для самого первого релиза на новом edge публичный smoke test становится
-подтверждением только после DNS cutover. До него состояние контейнеров проверяется
-на каждом узле, а после смены `A` обязательно повторяются внешний HTTPS smoke test,
-авторизация, отправка формы и тестовое событие Telegram.
+Для первого релиза в Yandex Cloud публичный smoke test становится подтверждением
+только после DNS cutover. До него проверяются контейнеры на ВМ, а после смены `A`
+обязательно повторяются внешний HTTPS smoke test, авторизация, отправка формы и
+тестовое событие Telegram.
 
 Полный preflight, migration, rollback и security runbook:
 [`docs/operations/r1-deployment-runbook.md`](docs/operations/r1-deployment-runbook.md).

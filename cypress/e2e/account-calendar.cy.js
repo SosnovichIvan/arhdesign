@@ -18,6 +18,7 @@ function feed(projects) {
 
 describe("Общий календарь проектов", () => {
   beforeEach(() => {
+    cy.clock(new Date("2026-10-01T12:00:00Z").getTime(), ["Date"]);
     cy.intercept("GET", "/api/v1/me", { statusCode: 200, body: { id: "admin-1", login: "svetaZZZ", globalRole: "super_admin" } }).as("accessCheck");
     cy.intercept("GET", "/api/v1/settings", { statusCode: 200, body: { theme: "light" } });
   });

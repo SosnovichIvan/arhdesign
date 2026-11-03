@@ -5,14 +5,16 @@
 ## 1. Источники конфигурации
 
 Production secrets хранятся только в GitHub Repository secrets. Workflow
-создаёт `/opt/arhdesign/.env` с правами `600`; ручного редактирования файла во
-время штатного релиза нет. Полный шаблон без значений находится в
+создаёт `/etc/arhdesign/production.env` с владельцем `root:arhdesign` и правами
+`0640`; доступ ограничен root и deploy-пользователем в системной группе
+`arhdesign`. Ручного редактирования файла во время штатного релиза нет. Полный
+шаблон без значений находится в
 `.env.example`, а единственный runtime contract — в `infra/docker-compose.yml`.
 
 Обязательные группы секретов:
 
-- VPS: `VPS_HOST`, `VPS_PORT`, `VPS_USER`, `VPS_PASSWORD`,
-  `VPS_SSH_AUTH_METHOD=password`, `VPS_DEPLOY_PATH`;
+- Yandex Cloud: `YANDEX_HOST`, `YANDEX_SSH_PORT`, `YANDEX_SSH_USER`,
+  `YANDEX_DEPLOY_SSH_KEY`;
 - домен и БД: `CADDY_SITE`, `NEXT_PUBLIC_SITE_URL`, `POSTGRES_DB`,
   `POSTGRES_USER`, `POSTGRES_PASSWORD`;
 - auth crypto: `COOLDOWN_HMAC_SECRET`, `ACCOUNT_TOKEN_HMAC_SECRET`,
@@ -20,11 +22,12 @@ Production secrets хранятся только в GitHub Repository secrets. W
   `OUTBOX_ENCRYPTION_KEY_VERSION`;
 - SMTP и Telegram: переменные из `.env.example`, включая bot/relay/webhook;
 - системные учётные записи: `ADMIN_*` и `TECH_ADMIN_*`;
-- backup: `BACKUP_RESTIC_REPOSITORY`, `BACKUP_RESTIC_PASSWORD`,
-  `BACKUP_AWS_ACCESS_KEY_ID`, `BACKUP_AWS_SECRET_ACCESS_KEY`.
+- backup: на аварийном single-node этапе — локальный PostgreSQL dump и Yandex
+  Cloud Backup; offsite Restic возвращается отдельным изменением после выбора
+  независимого хранилища.
 
-`ACCOUNT_TOKEN_HMAC_SECRET`, `OUTBOX_ENCRYPTION_KEY` и backup secrets проверяются
-workflow до SSH. Пустое значение останавливает релиз.
+`ACCOUNT_TOKEN_HMAC_SECRET`, `OUTBOX_ENCRYPTION_KEY` и обязательные runtime
+secrets проверяются генератором env до SSH. Пустое значение останавливает релиз.
 
 ## 2. Preflight релиза
 
@@ -33,23 +36,26 @@ workflow до SSH. Пустое значение останавливает ре
 2. PR `develop → main` прошёл те же обязательные checks и review.
 3. Release commit находится в актуальной `origin/main`.
 4. Тег имеет неизменяемый формат `MAJOR.MINOR.PATCH`, для R1 — `0.2.0`.
-5. S3 bucket доступен выделенными credentials; последний restore-drill успешен.
-6. На VPS не менее 30% свободного диска, PostgreSQL healthy, активных incidents
+5. Последний Cloud Backup доступен; для существующей БД проверен свежий
+   логический dump и сценарий восстановления.
+6. На ВМ не менее 30% свободного диска, PostgreSQL healthy, активных incidents
    нет, SMTP и Telegram diagnostics зелёные.
 
 Workflow дополнительно проверяет принадлежность tag commit ветке `main`.
 
 ## 3. Порядок deployment
 
-1. GitHub Actions собирает web, API и backup images с тегом commit SHA.
-2. Images и будущий `.env.next` передаются на VPS.
-3. До миграций запускается одноразовый backup текущей БД через новый backup
-   image; ошибка checksum, Restic или S3 останавливает deployment.
-4. Текущий `.env` сохраняется как `.env.previous`, затем `.env.next` атомарно
-   становится `.env`.
-5. Compose запускает PostgreSQL, применяет additive migrations, затем API, web
-   и Caddy; `--wait` требует успешных health checks.
-6. Workflow устанавливает Telegram webhook/commands и проверяет фактический URL.
+1. GitHub Actions собирает web, API, Telegram proxy и backup images с тегом
+   commit SHA.
+2. Images и будущий `production.env` передаются на production-ВМ Yandex Cloud.
+3. При существующей БД до миграций запускается одноразовый локальный backup;
+   ошибка dump/checksum останавливает deployment.
+4. `production.env` устанавливается в `/etc/arhdesign` с владельцем
+   `root:arhdesign` и mode `0640`.
+5. Single-node Compose запускает PostgreSQL, применяет additive migrations,
+   затем API, web и Caddy; `--wait` требует успешных health checks.
+6. API запускает Telegram long polling через закрытый SSH proxy; внешний webhook
+   не используется.
 7. Оператор проверяет `/healthz`, `/readyz`, вход, список проектов, Mail/Telegram
    diagnostics и отсутствие нового critical incident.
 
@@ -74,8 +80,8 @@ Additive R1 schema совместима с предыдущим приложен
 2. Выбрать предыдущий проверенный тег, входящий в `main`, и его commit SHA.
 3. Убедиться, что соответствующие images присутствуют на VPS; если нет —
    повторно доставить их из доверенного release artifact.
-4. Восстановить `.env.previous`, но сохранить новые crypto/DB credentials, если
-   они уже использовались; изменить только `RELEASE_IMAGE_TAG` на предыдущий SHA.
+4. Сгенерировать env с предыдущим `RELEASE_IMAGE_TAG`, сохранив текущие
+   crypto/DB credentials.
 5. Выполнить `docker compose ... up -d --no-build --wait`.
 6. Проверить health, login, чтение существующих данных и Telegram/SMTP.
 

@@ -19,11 +19,6 @@ jobs:
       ACCOUNT_TOKEN_HMAC_SECRET: ${{ secrets.ACCOUNT_TOKEN_HMAC_SECRET }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-      BEGET_API_HOST: ${{ secrets.BEGET_API_HOST }}
-      BEGET_DATA_HOST: ${{ secrets.BEGET_DATA_HOST }}
-      BEGET_EDGE_HOST: ${{ secrets.BEGET_EDGE_HOST }}
-      BEGET_SSH_PORT: ${{ secrets.BEGET_SSH_PORT }}
-      BEGET_SSH_USER: ${{ secrets.BEGET_SSH_USER }}
       CADDY_SITE: ${{ secrets.CADDY_SITE }}
       COOLDOWN_HMAC_SECRET: ${{ secrets.COOLDOWN_HMAC_SECRET }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
@@ -42,6 +37,9 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+      YANDEX_HOST: ${{ secrets.YANDEX_HOST }}
+      YANDEX_SSH_PORT: ${{ secrets.YANDEX_SSH_PORT }}
+      YANDEX_SSH_USER: ${{ secrets.YANDEX_SSH_USER }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -60,124 +58,80 @@ jobs:
           docker build --tag arhdesign-api:"$GITHUB_SHA" apps/api
           docker build --tag arhdesign-postgres-backup:"$GITHUB_SHA" --file infra/backup/Dockerfile infra
           docker build --tag arhdesign-telegram-proxy:"$GITHUB_SHA" infra/telegram-proxy
-          docker save arhdesign-web:"$GITHUB_SHA" | gzip -1 > edge-images.tar.gz
-          docker save arhdesign-api:"$GITHUB_SHA" arhdesign-telegram-proxy:"$GITHUB_SHA" | gzip -1 > api-images.tar.gz
-          docker save arhdesign-postgres-backup:"$GITHUB_SHA" | gzip -1 > data-images.tar.gz
-          tar -czf release-files.tar.gz infra/beget apps/api/migrations
+          docker save \
+            arhdesign-web:"$GITHUB_SHA" \
+            arhdesign-api:"$GITHUB_SHA" \
+            arhdesign-postgres-backup:"$GITHUB_SHA" \
+            arhdesign-telegram-proxy:"$GITHUB_SHA" | gzip -1 > release-images.tar.gz
+          tar -czf release-files.tar.gz infra apps/api/migrations
 
-      - name: Render per-node configuration
+      - name: Render production configuration
         run: |
           set -eu
-          infra/beget/render-env.py edge edge.env "$GITHUB_SHA" "$GITHUB_REF_NAME"
-          infra/beget/render-env.py api api.env "$GITHUB_SHA" "$GITHUB_REF_NAME"
-          infra/beget/render-env.py data data.env "$GITHUB_SHA" "$GITHUB_REF_NAME"
+          infra/yandex/render-env.py production.env "$GITHUB_SHA" "$GITHUB_REF_NAME"
 
       - name: Configure deploy SSH client
         env:
-          BEGET_DEPLOY_SSH_KEY: ${{ secrets.BEGET_DEPLOY_SSH_KEY }}
+          YANDEX_DEPLOY_SSH_KEY: ${{ secrets.YANDEX_DEPLOY_SSH_KEY }}
         run: |
           set -eu
           install -d -m 0700 ~/.ssh
-          printf '%s\n' "$BEGET_DEPLOY_SSH_KEY" > ~/.ssh/arhdesign_beget
-          chmod 0600 ~/.ssh/arhdesign_beget
-          ssh-keygen -y -f ~/.ssh/arhdesign_beget >/dev/null
-          ssh-keyscan -T 10 -p "$BEGET_SSH_PORT" "$BEGET_EDGE_HOST" "$BEGET_API_HOST" > ~/.ssh/known_hosts
-          ssh -i ~/.ssh/arhdesign_beget -p "$BEGET_SSH_PORT" -o BatchMode=yes -o IdentitiesOnly=yes "$BEGET_SSH_USER@$BEGET_API_HOST" \
-            "ssh-keyscan -T 10 -p '$BEGET_SSH_PORT' '$BEGET_DATA_HOST'" >> ~/.ssh/known_hosts
+          printf '%s\n' "$YANDEX_DEPLOY_SSH_KEY" > ~/.ssh/arhdesign_yandex
+          chmod 0600 ~/.ssh/arhdesign_yandex
+          ssh-keygen -y -f ~/.ssh/arhdesign_yandex >/dev/null
+          ssh-keyscan -T 10 -p "$YANDEX_SSH_PORT" "$YANDEX_HOST" > ~/.ssh/known_hosts
           chmod 0600 ~/.ssh/known_hosts
           cat > ~/.ssh/config <<EOF
-          Host arh-edge
-            HostName $BEGET_EDGE_HOST
-            User $BEGET_SSH_USER
-            Port $BEGET_SSH_PORT
-            IdentityFile ~/.ssh/arhdesign_beget
+          Host arh-production
+            HostName $YANDEX_HOST
+            User $YANDEX_SSH_USER
+            Port $YANDEX_SSH_PORT
+            IdentityFile ~/.ssh/arhdesign_yandex
             IdentitiesOnly yes
             BatchMode yes
             StrictHostKeyChecking yes
             UserKnownHostsFile ~/.ssh/known_hosts
-          Host arh-api
-            HostName $BEGET_API_HOST
-            User $BEGET_SSH_USER
-            Port $BEGET_SSH_PORT
-            IdentityFile ~/.ssh/arhdesign_beget
-            IdentitiesOnly yes
-            BatchMode yes
-            StrictHostKeyChecking yes
-            UserKnownHostsFile ~/.ssh/known_hosts
-          Host arh-data
-            HostName $BEGET_DATA_HOST
-            User $BEGET_SSH_USER
-            Port $BEGET_SSH_PORT
-            IdentityFile ~/.ssh/arhdesign_beget
-            IdentitiesOnly yes
-            BatchMode yes
-            StrictHostKeyChecking yes
-            UserKnownHostsFile ~/.ssh/known_hosts
-            ProxyJump arh-api
           EOF
           chmod 0600 ~/.ssh/config
 
-      - name: Bootstrap hosts
+      - name: Bootstrap production host
         run: |
           set -eu
-          scp infra/beget/bootstrap-host.sh arh-edge:/tmp/bootstrap-host.sh
-          ssh arh-edge "sh /tmp/bootstrap-host.sh edge; rm -f /tmp/bootstrap-host.sh"
-          scp infra/beget/bootstrap-host.sh arh-api:/tmp/bootstrap-host.sh
-          ssh arh-api "sh /tmp/bootstrap-host.sh api; rm -f /tmp/bootstrap-host.sh"
-          scp infra/beget/bootstrap-host.sh arh-data:/tmp/bootstrap-host.sh
-          ssh arh-data "sh /tmp/bootstrap-host.sh data; rm -f /tmp/bootstrap-host.sh"
+          scp infra/yandex/bootstrap-host.sh arh-production:/tmp/bootstrap-host.sh
+          ssh arh-production "sudo sh /tmp/bootstrap-host.sh '$YANDEX_SSH_USER'; rm -f /tmp/bootstrap-host.sh"
 
-      - name: Deploy data node
+      - name: Deploy single-node production
         run: |
           set -eu
-          scp release-files.tar.gz data-images.tar.gz data.env arh-data:/tmp/
-          ssh arh-data 'sh -se' <<'REMOTE'
-          set -eu
-          tar -xzf /tmp/release-files.tar.gz -C /opt/arhdesign
-          install -m 0600 /tmp/data.env /etc/arhdesign/data.env
-          docker load -i /tmp/data-images.tar.gz
-          cd /opt/arhdesign
-          if docker ps --format '{{.Names}}' | grep -q 'postgres'; then
-            docker compose --env-file /etc/arhdesign/data.env -f infra/beget/compose-data.yml run --rm -e BACKUP_RUN_ONCE=true postgres-backup
-          fi
-          docker compose --env-file /etc/arhdesign/data.env -f infra/beget/compose-data.yml up -d --no-build --wait --wait-timeout 120
-          rm -f /tmp/release-files.tar.gz /tmp/data-images.tar.gz /tmp/data.env
-          REMOTE
-
-      - name: Deploy API node
-        run: |
-          set -eu
-          scp release-files.tar.gz api-images.tar.gz api.env arh-api:/tmp/
-          ssh arh-api 'sh -se' <<'REMOTE'
+          scp release-files.tar.gz release-images.tar.gz production.env arh-production:/tmp/
+          ssh arh-production 'sh -se' <<'REMOTE'
           set -eu
           test -s /etc/arhdesign/telegram-proxy/id_ed25519
           test -s /etc/arhdesign/telegram-proxy/known_hosts
           tar -xzf /tmp/release-files.tar.gz -C /opt/arhdesign
-          install -m 0600 /tmp/api.env /etc/arhdesign/api.env
-          docker load -i /tmp/api-images.tar.gz
+          sudo install -o root -g arhdesign -m 0640 /tmp/production.env /etc/arhdesign/production.env
+          docker load -i /tmp/release-images.tar.gz
           cd /opt/arhdesign
-          docker compose --env-file /etc/arhdesign/api.env -f infra/beget/compose-api.yml up -d --no-build --wait --wait-timeout 120
-          rm -f /tmp/release-files.tar.gz /tmp/api-images.tar.gz /tmp/api.env
+          if docker ps --format '{{.Names}}' | grep -q '^arhdesign-postgres-1$'; then
+            docker compose --project-name arhdesign --profile telegram-proxy \
+              --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml \
+              run --rm -e BACKUP_RUN_ONCE=true postgres-backup
+          fi
+          docker compose --project-name arhdesign --profile telegram-proxy \
+            --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml \
+            up -d --no-build --wait --wait-timeout 180
+          rm -f /tmp/release-files.tar.gz /tmp/release-images.tar.gz /tmp/production.env
           REMOTE
 
-      - name: Deploy edge node
+      - name: Internal production smoke test
         run: |
           set -eu
-          scp release-files.tar.gz edge-images.tar.gz edge.env arh-edge:/tmp/
-          ssh arh-edge 'sh -se' <<'REMOTE'
+          ssh arh-production 'sh -se' <<'REMOTE'
           set -eu
-          tar -xzf /tmp/release-files.tar.gz -C /opt/arhdesign
-          install -m 0600 /tmp/edge.env /etc/arhdesign/edge.env
-          docker load -i /tmp/edge-images.tar.gz
           cd /opt/arhdesign
-          docker compose --env-file /etc/arhdesign/edge.env -f infra/beget/compose-edge.yml up -d --no-build --wait --wait-timeout 120
-          rm -f /tmp/release-files.tar.gz /tmp/edge-images.tar.gz /tmp/edge.env
+          compose="docker compose --project-name arhdesign --profile telegram-proxy --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml"
+          $compose exec -T api wget -q -O /dev/null http://localhost:8080/healthz
+          $compose exec -T api wget -q -O /dev/null http://localhost:8080/readyz
+          $compose exec -T web node -e "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+          $compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile
           REMOTE
-
-      - name: Production smoke test
-        run: |
-          set -eu
-          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 --max-time 20 \
-            "$NEXT_PUBLIC_SITE_URL/" >/dev/null
-          curl --fail --silent --show-error --retry 8 --retry-all-errors --retry-delay 5 --max-time 20 \
-            "$NEXT_PUBLIC_SITE_URL/readyz" >/dev/null
