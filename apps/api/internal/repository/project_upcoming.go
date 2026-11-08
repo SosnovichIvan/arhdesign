@@ -98,7 +98,7 @@ func (repository *Postgres) CreateProjectTask(ctx context.Context, command proje
 	if _, err = tx.Exec(ctx, `INSERT INTO audit_events (event_type,result,request_id,actor_user_id,subject_type,project_id,metadata,occurred_at) VALUES ('task.created','success',$1,$2,'project_task',$3,jsonb_build_object('taskId',$4::text),$5)`, command.RequestID, command.UserID, command.ProjectID, item.ID, command.Now); err != nil {
 		return project.UpcomingItem{}, fmt.Errorf("audit project task creation: %w", err)
 	}
-	if err = enqueueTaskAssigneeNotification(ctx, tx, command.ProjectID, item.ID, command.UserID, command.Notification, command.Now); err != nil {
+	if err = enqueueTaskAssigneeNotification(ctx, tx, command.ProjectID, item.ID, item.ID, command.UserID, command.Notification, command.Now); err != nil {
 		return project.UpcomingItem{}, err
 	}
 	if err = tx.Commit(ctx); err != nil {

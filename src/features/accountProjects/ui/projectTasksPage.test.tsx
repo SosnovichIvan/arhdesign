@@ -10,6 +10,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 const project = { address: null, autoApproveExpenses: true, createdAt: "2026-09-24T10:00:00Z", createdByUserId: "user-1", currencyCode: "RUB", customerUserId: "user-1", description: null, id: "project-1", name: "Полянка", plannedFinishOn: null, plannedStartOn: null, status: "active", type: "interior_design", version: 1 };
 const member = { email: "anna@example.com", firstName: "Анна", joinedAt: "2026-09-24T10:00:00Z", lastName: "Иванова", login: "anna", middleName: null, professionalRole: { code: "designer", name: "Дизайнер" }, projectRoles: ["executor"], removable: true, userId: "user-2" };
+const otherMember = { ...member, email: "ivan@example.com", firstName: "Иван", lastName: "Петров", login: "ivan", userId: "user-3" };
 const task = { assignees: [{ firstName: "Анна", lastName: "Иванова", login: "anna", userId: "user-2" }], canChangeStatus: true, canEdit: true, completedAt: null, createdAt: "2026-09-24T10:00:00Z", description: "Подготовить комплект", dueAt: "2027-10-10T12:00:00Z", id: "task-1", projectId: "project-1", startedAt: null, status: "new", title: "Рабочие чертежи", version: 1 };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
@@ -73,6 +74,66 @@ describe("ProjectTasksPage", () => {
     fireEvent.change(within(dialog).getByLabelText("Дедлайн, время *"), { target: { value: "12:00" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Создать задачу" }));
     await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === "POST" && String(options.body).includes('"assigneeUserIds":["user-2"]'))).toBe(true));
+  });
+
+  it("changes the responsible participant after task creation", async () => {
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "PATCH") return response({ ...task, assignees: [{ firstName: otherMember.firstName, lastName: otherMember.lastName, login: otherMember.login, userId: otherMember.userId }], version: 2 });
+      if (url.endsWith("/tasks")) return response({ canCreate: true, items: [task] });
+      if (url.endsWith("/members")) return response({ canManage: true, items: [member, otherMember] });
+      if (url.endsWith("/me")) return response({ globalRole: null, id: "user-1", login: "owner" });
+      return response(project);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProjectTasksPage projectId="project-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Изменить ответственного задачи «Рабочие чертежи»" }));
+    const dialog = screen.getByRole("dialog", { name: "Изменение ответственного задачи «Рабочие чертежи»" });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Ответственный" }));
+    fireEvent.click(screen.getByRole("option", { name: /Иван Петров/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([, options]) => options?.method === "PATCH" && String(options.body) === JSON.stringify({ assigneeUserIds: ["user-3"] }))).toBe(true));
+    expect(await screen.findByText("Ответственный изменён")).toBeTruthy();
+    expect(screen.getByText("Ответственные: Иван Петров")).toBeTruthy();
+  });
+
+  it("requires a responsible participant and explains an assignment failure", async () => {
+    const unassignedTask = { ...task, assignees: [] };
+    const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === "PATCH") return Promise.reject("offline");
+      if (url.endsWith("/tasks")) return response({ canCreate: true, items: [unassignedTask] });
+      if (url.endsWith("/members")) return response({ canManage: true, items: [member] });
+      if (url.endsWith("/me")) return response({ globalRole: null, id: "user-1", login: "owner" });
+      return response(project);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ProjectTasksPage projectId="project-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Изменить ответственного задачи «Рабочие чертежи»" }));
+    const dialog = screen.getByRole("dialog", { name: "Изменение ответственного задачи «Рабочие чертежи»" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+    expect(within(dialog).getByRole("alert").textContent).toContain("Выберите ответственного");
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Ответственный" }));
+    fireEvent.click(screen.getByRole("option", { name: /Анна Иванова/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Сохранить" }));
+    expect((await within(dialog).findByRole("alert")).textContent).toContain("Не удалось изменить ответственного");
+  });
+
+  it("disables reassignment when the project has no available participants", async () => {
+    const unassignedTask = { ...task, assignees: [] };
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/tasks")) return response({ canCreate: true, items: [unassignedTask] });
+      if (url.endsWith("/members")) return response({ canManage: true, items: [] });
+      if (url.endsWith("/me")) return response({ globalRole: null, id: "user-1", login: "owner" });
+      return response(project);
+    }));
+    render(<ProjectTasksPage projectId="project-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Изменить ответственного задачи «Рабочие чертежи»" }));
+    const dialog = screen.getByRole("dialog", { name: "Изменение ответственного задачи «Рабочие чертежи»" });
+    expect(within(dialog).getByRole("combobox", { name: "Ответственный" }).hasAttribute("disabled")).toBe(true);
+    expect(within(dialog).getByRole("button", { name: "Сохранить" }).hasAttribute("disabled")).toBe(true);
+    expect(within(dialog).getByText("Сначала добавьте участника в проект")).toBeTruthy();
   });
 
   it("covers mine, deadline, assignee and sort filters across task states", async () => {

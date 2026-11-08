@@ -1,4 +1,4 @@
-import { readApiError } from "@/shared/lib";
+import { csrfToken, readApiError } from "@/shared/lib";
 
 export type ThemePreference = "light" | "dark";
 
@@ -10,7 +10,6 @@ export async function loadThemePreference(signal?: AbortSignal): Promise<ThemePr
   if (body.theme !== "light" && body.theme !== "dark") throw new Error("Сервис вернул некорректную тему");
   return body.theme;
 }
-
 export async function saveThemePreference(theme: ThemePreference): Promise<ThemePreference> {
   const response = await fetch("/api/v1/settings", {
     body: JSON.stringify({ theme }), credentials: "same-origin",
@@ -20,9 +19,4 @@ export async function saveThemePreference(theme: ThemePreference): Promise<Theme
   const body = await response.json() as { theme?: unknown };
   if (body.theme !== "light" && body.theme !== "dark") throw new Error("Сервис вернул некорректную тему");
   return body.theme;
-}
-
-function csrfToken() {
-  const cookie = document.cookie.split("; ").find((value) => value.startsWith("arhdesign_csrf=") || value.startsWith("__Host-arhdesign_csrf="));
-  return cookie ? decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)) : "";
 }

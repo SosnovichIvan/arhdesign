@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const MaxProjectDocumentBytes int64 = 10 * 1024 * 1024
@@ -89,6 +90,7 @@ type AccountNotificationList struct {
 
 type ProjectDocument struct {
 	ID, ProjectID, Name, MediaType, UploadedByUserID string
+	ContextChatID                                    *string
 	SizeBytes                                        int64
 	CreatedAt                                        time.Time
 	CanDelete                                        bool
@@ -315,7 +317,7 @@ func (service *Service) ListDocuments(ctx context.Context, actor Actor, projectI
 
 func (service *Service) UploadDocument(ctx context.Context, actor Actor, projectID, name, mediaType, requestID string, reader io.Reader, size int64) (ProjectDocument, error) {
 	name, mediaType = strings.TrimSpace(name), strings.TrimSpace(mediaType)
-	if !validActorAndProject(actor, projectID) || len([]rune(name)) < 1 || len([]rune(name)) > 240 || len(mediaType) < 3 || len(mediaType) > 127 || size < 1 || size > MaxProjectDocumentBytes || len(requestID) < 8 {
+	if !validActorAndProject(actor, projectID) || !validProjectDocumentName(name) || len(mediaType) < 3 || len(mediaType) > 127 || size < 1 || size > MaxProjectDocumentBytes || len(requestID) < 8 {
 		return ProjectDocument{}, ErrInvalidInput
 	}
 	content, err := io.ReadAll(io.LimitReader(reader, MaxProjectDocumentBytes+1))
@@ -331,6 +333,11 @@ func (service *Service) UploadDocument(ctx context.Context, actor Actor, project
 		return ProjectDocument{}, err
 	}
 	return store.UploadProjectDocument(ctx, UploadProjectDocumentCommand{Actor: actor, ProjectID: projectID, Name: name, MediaType: mediaType, RequestID: requestID, Content: content, Now: service.now().UTC(), Notification: notification})
+}
+
+func validProjectDocumentName(name string) bool {
+	length := len([]rune(name))
+	return length >= 1 && length <= 240 && strings.IndexFunc(name, unicode.IsControl) == -1
 }
 
 func (service *Service) DownloadDocument(ctx context.Context, actor Actor, projectID, documentID string) (ProjectDocumentContent, error) {

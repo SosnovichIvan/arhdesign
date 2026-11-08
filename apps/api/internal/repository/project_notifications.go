@@ -125,11 +125,11 @@ func enqueueChatMemberNotification(ctx context.Context, tx pgx.Tx, projectID, ch
 	return nil
 }
 
-func enqueueTaskAssigneeNotification(ctx context.Context, tx pgx.Tx, projectID, taskID, actorID string, notification *project.EventNotification, now time.Time) error {
+func enqueueTaskAssigneeNotification(ctx context.Context, tx pgx.Tx, projectID, taskID, eventID, actorID string, notification *project.EventNotification, now time.Time) error {
 	if notification == nil {
 		return nil
 	}
-	if err := insertTaskAssigneeAccountNotifications(ctx, tx, projectID, taskID, actorID, notification, now); err != nil {
+	if err := insertTaskAssigneeAccountNotifications(ctx, tx, projectID, taskID, eventID, actorID, notification, now); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `
@@ -137,18 +137,18 @@ func enqueueTaskAssigneeNotification(ctx context.Context, tx pgx.Tx, projectID, 
 			recipient_user_id,channel,message_type,idempotency_key,
 			payload_ciphertext,payload_key_version,metadata,created_at,updated_at
 		)
-		SELECT assignee.user_id,'telegram',$4::text,$4::text || ':' || $2::text || ':' || assignee.user_id,
-		       $5,$6,jsonb_build_object('projectId',$1::text,'taskId',$2::text),$7,$7
+		SELECT assignee.user_id,'telegram',$5::text,$5::text || ':' || $3::text || ':' || assignee.user_id,
+		       $6,$7,jsonb_build_object('projectId',$1::text,'taskId',$2::text),$8,$8
 		FROM project_task_assignees assignee
 		JOIN project_memberships membership ON membership.project_id=$1::uuid AND membership.user_id=assignee.user_id AND membership.revoked_at IS NULL
 		JOIN users ON users.id=assignee.user_id AND users.status='active'
 		JOIN telegram_account_bindings binding ON binding.user_id=users.id AND binding.revoked_at IS NULL
 		JOIN telegram_subscribers subscriber ON subscriber.user_id=users.id AND subscriber.chat_id=binding.chat_id AND subscriber.unsubscribed_at IS NULL
 		LEFT JOIN account_notification_preferences preferences ON preferences.user_id=users.id
-		WHERE assignee.task_id=$2::uuid AND assignee.user_id<>$3::uuid
+		WHERE assignee.task_id=$2::uuid AND assignee.user_id<>$4::uuid
 		  AND COALESCE(preferences.telegram_events_enabled,TRUE)
 		ON CONFLICT (idempotency_key) DO NOTHING
-	`, projectID, taskID, actorID, notification.MessageType, notification.PayloadCiphertext, notification.PayloadKeyVersion, now)
+	`, projectID, taskID, eventID, actorID, notification.MessageType, notification.PayloadCiphertext, notification.PayloadKeyVersion, now)
 	if err != nil {
 		return fmt.Errorf("enqueue task assignee notification: %w", err)
 	}
@@ -219,17 +219,17 @@ func insertContextChatAccountNotifications(ctx context.Context, tx pgx.Tx, proje
 	return nil
 }
 
-func insertTaskAssigneeAccountNotifications(ctx context.Context, tx pgx.Tx, projectID, taskID, actorID string, notification *project.EventNotification, now time.Time) error {
+func insertTaskAssigneeAccountNotifications(ctx context.Context, tx pgx.Tx, projectID, taskID, eventID, actorID string, notification *project.EventNotification, now time.Time) error {
 	title, body := accountNotificationCopy(notification)
 	_, err := tx.Exec(ctx, `
 		INSERT INTO account_notifications(recipient_user_id,project_id,actor_user_id,event_type,event_id,title,body,href,created_at)
-		SELECT assignee.user_id,$1::uuid,$3::uuid,$4::text,$2::text,$5::text,$6::text,'/account/projects/' || $1::text || '/tasks',$7::timestamptz
+		SELECT assignee.user_id,$1::uuid,$4::uuid,$5::text,$3::text,$6::text,$7::text,'/account/projects/' || $1::text || '/tasks',$8::timestamptz
 		FROM project_task_assignees assignee
 		JOIN project_memberships membership ON membership.project_id=$1::uuid AND membership.user_id=assignee.user_id AND membership.revoked_at IS NULL
 		JOIN users ON users.id=assignee.user_id AND users.status='active'
-		WHERE assignee.task_id=$2::uuid AND assignee.user_id<>$3::uuid
+		WHERE assignee.task_id=$2::uuid AND assignee.user_id<>$4::uuid
 		ON CONFLICT (recipient_user_id,event_type,event_id) DO NOTHING
-	`, projectID, taskID, actorID, notification.MessageType, title, body, now)
+	`, projectID, taskID, eventID, actorID, notification.MessageType, title, body, now)
 	if err != nil {
 		return fmt.Errorf("insert task assignee account notifications: %w", err)
 	}

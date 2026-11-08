@@ -94,7 +94,7 @@ func (service *Service) CreateTask(ctx context.Context, actor Actor, projectID s
 	now := service.now().UTC()
 	title, description := strings.TrimSpace(request.Title), strings.TrimSpace(request.Description)
 	assignees := uniqueIDs(request.AssigneeUserIDs)
-	if !validActorAndProject(actor, projectID) || len(request.RequestID) < 8 || len([]rune(title)) < 2 || len([]rune(title)) > 200 || len([]rune(description)) > 5000 || len(assignees) != len(request.AssigneeUserIDs) || len(assignees) > 50 || request.DueAt.IsZero() || !request.DueAt.After(now) {
+	if !validActorAndProject(actor, projectID) || len(request.RequestID) < 8 || len([]rune(title)) < 2 || len([]rune(title)) > 200 || len([]rune(description)) > 5000 || len(assignees) != len(request.AssigneeUserIDs) || len(assignees) < 1 || len(assignees) > 50 || request.DueAt.IsZero() || !request.DueAt.After(now) {
 		return UpcomingItem{}, ErrInvalidInput
 	}
 	for _, assignee := range assignees {

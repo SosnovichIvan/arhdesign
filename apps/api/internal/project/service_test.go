@@ -288,6 +288,9 @@ func TestProjectContextChatValidationAndCommands(t *testing.T) {
 	if err != nil || opened.ChatID != chatID || store.contextCommand.Name != "Обсуждение планировки" || store.contextCommand.ContextType != "task" || !store.contextCommand.Now.Equal(now) {
 		t.Fatalf("opened=%#v command=%#v err=%v", opened, store.contextCommand, err)
 	}
+	if _, err = service.OpenContextChat(context.Background(), actor, customerID, OpenContextChatRequest{ContextType: "document", ContextID: contextID, Name: "Обсуждение документа", RequestID: "request-document-chat"}); err != nil || store.contextCommand.ContextType != "document" {
+		t.Fatalf("document context command=%#v err=%v", store.contextCommand, err)
+	}
 	page, err := service.ListContextChat(context.Background(), actor, customerID, chatID, 25, "")
 	if err != nil || page.ChatID != chatID || store.chatQuery.ChatID != chatID || store.chatQuery.PageSize != 25 {
 		t.Fatalf("page=%#v query=%#v err=%v", page, store.chatQuery, err)
@@ -401,7 +404,7 @@ func TestProjectCollaborationEventFailsBeforeStoreWhenEncryptionFails(t *testing
 	if err := service.ConfigureNotifications(cipher); err != nil {
 		t.Fatal(err)
 	}
-	_, err := service.CreateTask(context.Background(), Actor{UserID: actorID}, customerID, CreateTaskRequest{Title: "Задача", DueAt: now.Add(time.Hour), RequestID: "request-task"})
+	_, err := service.CreateTask(context.Background(), Actor{UserID: actorID}, customerID, CreateTaskRequest{Title: "Задача", AssigneeUserIDs: []string{actorID}, DueAt: now.Add(time.Hour), RequestID: "request-task"})
 	if err == nil || store.taskCommand.ProjectID != "" {
 		t.Fatalf("error=%v command=%#v", err, store.taskCommand)
 	}
@@ -665,11 +668,16 @@ func TestCollaborationMutationsStopWhenNotificationEncryptionFails(t *testing.T)
 			return err
 		}},
 		{"task create", func() error {
-			_, err := service.CreateTask(context.Background(), actor, customerID, CreateTaskRequest{Title: "Чертежи", DueAt: now.Add(time.Hour), RequestID: "request-task"})
+			_, err := service.CreateTask(context.Background(), actor, customerID, CreateTaskRequest{Title: "Чертежи", AssigneeUserIDs: []string{actorID}, DueAt: now.Add(time.Hour), RequestID: "request-task"})
 			return err
 		}},
 		{"task update", func() error {
 			_, err := service.UpdateTask(context.Background(), actor, customerID, customerID, UpdateTaskRequest{Status: TaskInProgress, ExpectedVersion: 1, RequestID: "request-task-update"})
+			return err
+		}},
+		{"task assignee update", func() error {
+			assignees := []string{actorID}
+			_, err := service.UpdateTask(context.Background(), actor, customerID, customerID, UpdateTaskRequest{AssigneeUserIDs: &assignees, ExpectedVersion: 1, RequestID: "request-task-assignee"})
 			return err
 		}},
 		{"meeting", func() error {
@@ -847,7 +855,7 @@ func TestUpcomingFeedAndCreationNormalizeAndValidate(t *testing.T) {
 	}
 
 	due := now.Add(48 * time.Hour)
-	if _, err = service.CreateTask(context.Background(), actor, customerID, CreateTaskRequest{Title: "  Подготовить планы  ", Description: "  Первый этаж  ", DueAt: due, RequestID: "request-task"}); err != nil {
+	if _, err = service.CreateTask(context.Background(), actor, customerID, CreateTaskRequest{Title: "  Подготовить планы  ", Description: "  Первый этаж  ", AssigneeUserIDs: []string{actorID}, DueAt: due, RequestID: "request-task"}); err != nil {
 		t.Fatal(err)
 	}
 	if store.taskCommand.Title != "Подготовить планы" || store.taskCommand.Description != "Первый этаж" || !store.taskCommand.DueAt.Equal(due) || !store.taskCommand.Now.Equal(now) {
@@ -882,7 +890,7 @@ func TestUpcomingFeedAndCreationNormalizeAndValidate(t *testing.T) {
 		t.Fatalf("list store error=%v", err)
 	}
 	store.taskErr = context.DeadlineExceeded
-	if _, err = service.CreateTask(context.Background(), actor, customerID, CreateTaskRequest{Title: "Задача", DueAt: due, RequestID: "request-task"}); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err = service.CreateTask(context.Background(), actor, customerID, CreateTaskRequest{Title: "Задача", AssigneeUserIDs: []string{actorID}, DueAt: due, RequestID: "request-task"}); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("task store error=%v", err)
 	}
 	store.meetingErr = context.DeadlineExceeded

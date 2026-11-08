@@ -368,7 +368,7 @@ func (repository *Postgres) ListProjectDocuments(ctx context.Context, actor proj
 	if err != nil {
 		return project.ProjectDocumentList{}, err
 	}
-	rows, err := repository.pool.Query(ctx, `SELECT id::text,project_id::text,name,media_type,size_bytes,uploaded_by_user_id::text,created_at,($3 OR uploaded_by_user_id=$2),version FROM project_documents WHERE project_id=$1 AND deleted_at IS NULL ORDER BY created_at DESC,id DESC`, projectID, actor.UserID, canManage || actor.SuperAdmin)
+	rows, err := repository.pool.Query(ctx, `SELECT document.id::text,document.project_id::text,document.name,document.media_type,document.size_bytes,document.uploaded_by_user_id::text,document.created_at,($3 OR document.uploaded_by_user_id=$2),document.version,(SELECT chat.id::text FROM chats chat WHERE chat.project_id=document.project_id AND chat.kind='context' AND chat.context_type='document' AND chat.context_id=document.id AND chat.archived_at IS NULL) FROM project_documents document WHERE document.project_id=$1 AND document.deleted_at IS NULL ORDER BY document.created_at DESC,document.id DESC`, projectID, actor.UserID, canManage || actor.SuperAdmin)
 	if err != nil {
 		return project.ProjectDocumentList{}, fmt.Errorf("list project documents: %w", err)
 	}
@@ -376,7 +376,7 @@ func (repository *Postgres) ListProjectDocuments(ctx context.Context, actor proj
 	items := []project.ProjectDocument{}
 	for rows.Next() {
 		var item project.ProjectDocument
-		if err = rows.Scan(&item.ID, &item.ProjectID, &item.Name, &item.MediaType, &item.SizeBytes, &item.UploadedByUserID, &item.CreatedAt, &item.CanDelete, &item.Version); err != nil {
+		if err = rows.Scan(&item.ID, &item.ProjectID, &item.Name, &item.MediaType, &item.SizeBytes, &item.UploadedByUserID, &item.CreatedAt, &item.CanDelete, &item.Version, &item.ContextChatID); err != nil {
 			return project.ProjectDocumentList{}, fmt.Errorf("scan project document: %w", err)
 		}
 		items = append(items, item)

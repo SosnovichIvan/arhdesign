@@ -117,6 +117,7 @@ const (
 
 // Defines values for ProjectChatContextType.
 const (
+	ProjectChatContextTypeDocument ProjectChatContextType = "document"
 	ProjectChatContextTypeExpense  ProjectChatContextType = "expense"
 	ProjectChatContextTypeMaterial ProjectChatContextType = "material"
 	ProjectChatContextTypeTask     ProjectChatContextType = "task"
@@ -313,10 +314,10 @@ type CreateProjectRequest struct {
 
 // CreateProjectTaskRequest defines model for CreateProjectTaskRequest.
 type CreateProjectTaskRequest struct {
-	AssigneeUserIds *[]openapi_types.UUID `json:"assigneeUserIds,omitempty"`
-	Description     *string               `json:"description,omitempty"`
-	DueAt           time.Time             `json:"dueAt"`
-	Title           string                `json:"title"`
+	AssigneeUserIds []openapi_types.UUID `json:"assigneeUserIds"`
+	Description     *string              `json:"description,omitempty"`
+	DueAt           time.Time            `json:"dueAt"`
+	Title           string               `json:"title"`
 }
 
 // DeleteProjectMaterialRequest defines model for DeleteProjectMaterialRequest.
@@ -600,15 +601,16 @@ type ProjectChatSummaryKind string
 
 // ProjectDocument defines model for ProjectDocument.
 type ProjectDocument struct {
-	CanDelete        bool               `json:"canDelete"`
-	CreatedAt        time.Time          `json:"createdAt"`
-	Id               openapi_types.UUID `json:"id"`
-	MediaType        string             `json:"mediaType"`
-	Name             string             `json:"name"`
-	ProjectId        openapi_types.UUID `json:"projectId"`
-	SizeBytes        int64              `json:"sizeBytes"`
-	UploadedByUserId openapi_types.UUID `json:"uploadedByUserId"`
-	Version          int64              `json:"version"`
+	CanDelete        bool                `json:"canDelete"`
+	ContextChatId    *openapi_types.UUID `json:"contextChatId"`
+	CreatedAt        time.Time           `json:"createdAt"`
+	Id               openapi_types.UUID  `json:"id"`
+	MediaType        string              `json:"mediaType"`
+	Name             string              `json:"name"`
+	ProjectId        openapi_types.UUID  `json:"projectId"`
+	SizeBytes        int64               `json:"sizeBytes"`
+	UploadedByUserId openapi_types.UUID  `json:"uploadedByUserId"`
+	Version          int64               `json:"version"`
 }
 
 // ProjectDocumentList defines model for ProjectDocumentList.
@@ -903,7 +905,8 @@ type UpdateProjectRequest struct {
 
 // UpdateProjectTaskRequest defines model for UpdateProjectTaskRequest.
 type UpdateProjectTaskRequest struct {
-	Status *ProjectTaskStatus `json:"status,omitempty"`
+	AssigneeUserIds *[]openapi_types.UUID `json:"assigneeUserIds,omitempty"`
+	Status          *ProjectTaskStatus    `json:"status,omitempty"`
 }
 
 // UpdateProjectUserSettingsRequest defines model for UpdateProjectUserSettingsRequest.
@@ -1099,6 +1102,7 @@ type AssignProjectCustomerParams struct {
 
 // UploadProjectDocumentParams defines parameters for UploadProjectDocument.
 type UploadProjectDocumentParams struct {
+	// XFileName UTF-8 file name. Non-ASCII names use the `UTF-8''` prefix followed by percent-encoded UTF-8; legacy plain ASCII values remain supported.
 	XFileName string `json:"X-File-Name"`
 }
 
@@ -1328,7 +1332,7 @@ type ServerInterface interface {
 	// Create a named project chat
 	// (POST /v1/projects/{projectId}/chats)
 	CreateProjectChat(w http.ResponseWriter, r *http.Request, projectId ProjectId)
-	// Open the unique contextual chat for a task, material, or expense
+	// Open the unique contextual chat for a task, material, expense, or document
 	// (PUT /v1/projects/{projectId}/chats/context)
 	OpenProjectContextChat(w http.ResponseWriter, r *http.Request, projectId ProjectId)
 	// Soft-delete a project chat managed by the current account

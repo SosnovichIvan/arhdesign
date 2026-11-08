@@ -41,8 +41,8 @@ describe("theme preferences API", () => {
     expect((fetchMock.mock.calls[0]?.[1]?.headers as Record<string, string>)["X-CSRF-Token"]).toBe("");
   });
 
-  it("reads and decodes the secure CSRF cookie", async () => {
-    Object.defineProperty(document, "cookie", { configurable: true, value: "other=1; __Host-arhdesign_csrf=secure%20token" });
+  it("reads and decodes the local CSRF cookie", async () => {
+    Object.defineProperty(document, "cookie", { configurable: true, value: "other=1; arhdesign_csrf=secure%20token" });
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       void input;
       void init;

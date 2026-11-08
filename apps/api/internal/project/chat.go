@@ -62,7 +62,7 @@ type CreateChatMessageCommand struct {
 	Notification                                        *EventNotification
 }
 
-var allowedChatContextTypes = map[string]struct{}{"task": {}, "material": {}, "expense": {}}
+var allowedChatContextTypes = map[string]struct{}{"task": {}, "material": {}, "expense": {}, "document": {}}
 
 func (service *Service) ListChat(ctx context.Context, actor Actor, projectID string, pageSize int, before string) (ProjectChatPage, error) {
 	query, err := chatQuery(actor, projectID, "", pageSize, before)

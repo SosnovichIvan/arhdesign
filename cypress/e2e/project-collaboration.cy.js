@@ -79,22 +79,65 @@ describe("Проект — чаты и документация", () => {
     cy.wait("@readNotification");
   });
 
+  it("показывает документ в обсуждении и открывает полноэкранный просмотр", () => {
+    const documentId = "00000000-0000-0000-0000-000000000030";
+    const documentChat = { ...chat, contextId: documentId, contextTitle: "План кухни.pdf", contextType: "document", id: "00000000-0000-0000-0000-000000000031", kind: "context", name: "Обсуждение плана" };
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats`, { statusCode: 200, body: { canCreate: true, items: [documentChat] } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${documentChat.id}?pageSize=50`, { statusCode: 200, body: { canSend: true, chatId: documentChat.id, context: { chatId: documentChat.id, contextId: documentId, contextTitle: "План кухни.pdf", contextType: "document", name: documentChat.name, projectId }, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/documents/${documentId}`, { statusCode: 200, headers: { "content-type": "application/pdf" }, body: "%PDF-1.4 test" });
+    cy.visit(`/account/projects/${projectId}/chat/${documentChat.id}`);
+    cy.get('[data-cy="open-document-preview"]').should("be.visible").click();
+    cy.get('[role="dialog"][aria-label="Полноэкранный просмотр «План кухни.pdf»"]').should("be.visible");
+    cy.get('iframe[title="Полноэкранный просмотр документа «План кухни.pdf»"]').should("be.visible");
+    cy.contains("a", "Открыть отдельно").then(($link) => {
+      cy.get('button[aria-label="Закрыть полноэкранный просмотр"]').then(($button) => {
+        const linkRect = $link[0].getBoundingClientRect();
+        const buttonRect = $button[0].getBoundingClientRect();
+        expect(buttonRect.width).to.be.at.most(32);
+        expect(buttonRect.left - linkRect.right).to.be.at.least(12);
+      });
+    });
+    cy.get("body").type("{esc}");
+    cy.get('[role="dialog"][aria-label="Полноэкранный просмотр «План кухни.pdf»"]').should("not.exist");
+  });
+
+  it("авторизованно загружает изображение и открывает его на весь экран", () => {
+    const documentId = "00000000-0000-0000-0000-000000000032";
+    const imageChat = { ...chat, contextId: documentId, contextTitle: "Эскиз кухни.jpg", contextType: "document", id: "00000000-0000-0000-0000-000000000033", kind: "context", name: "Обсуждение эскиза" };
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats`, { statusCode: 200, body: { canCreate: true, items: [imageChat] } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/chats/${imageChat.id}?pageSize=50`, { statusCode: 200, body: { canSend: true, chatId: imageChat.id, context: { chatId: imageChat.id, contextId: documentId, contextTitle: imageChat.contextTitle, contextType: "document", name: imageChat.name, projectId }, currentUserId: member.userId, hasMore: false, messages: [], nextCursor: null, projectId } });
+    cy.intercept("GET", `/api/v1/projects/${projectId}/documents/${documentId}`, (request) => {
+      expect(request.headers.cookie).to.contain("arhdesign_csrf=test-csrf");
+      request.reply({ statusCode: 200, headers: { "content-type": "image/svg+xml" }, body: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="blue"/></svg>' });
+    }).as("loadDiscussionImage");
+
+    cy.visit(`/account/projects/${projectId}/chat/${imageChat.id}`);
+    cy.wait("@loadDiscussionImage");
+    cy.get('img[alt="Предпросмотр изображения «Эскиз кухни.jpg»"]').should("be.visible");
+    cy.get('[data-cy="open-document-preview"]').click();
+    cy.get('img[alt="Полноэкранный просмотр изображения «Эскиз кухни.jpg»"]').should("be.visible");
+    cy.get('button[aria-label="Закрыть полноэкранный просмотр"]').should("have.class", "size-8");
+  });
+
   it("загружает, открывает и удаляет документ проекта", () => {
+    const fileName = "План кухни.pdf";
+    const encodedFileName = `UTF-8''${encodeURIComponent(fileName)}`;
     let documents = [];
     cy.intercept("GET", `/api/v1/projects/${projectId}/documents`, (request) => request.reply({ statusCode: 200, body: { canUpload: true, items: documents } }));
     cy.intercept("POST", `/api/v1/projects/${projectId}/documents`, (request) => {
-      expect(request.headers["x-file-name"]).to.equal("plan.pdf");
-      const document = { canDelete: true, createdAt: "2026-09-30T10:00:00Z", id: "00000000-0000-0000-0000-000000000030", mediaType: "application/pdf", name: "plan.pdf", projectId, sizeBytes: 4, uploadedByUserId: member.userId, version: 1 };
+      expect(request.headers["x-csrf-token"]).to.equal("test-csrf");
+      expect(request.headers["x-file-name"]).to.equal(encodedFileName);
+      const document = { canDelete: true, createdAt: "2026-09-30T10:00:00Z", id: "00000000-0000-0000-0000-000000000030", mediaType: "application/pdf", name: fileName, projectId, sizeBytes: 4, uploadedByUserId: member.userId, version: 1 };
       documents = [document]; request.reply({ statusCode: 201, body: document });
     }).as("uploadDocument");
     cy.intercept("DELETE", `/api/v1/projects/${projectId}/documents/*`, { statusCode: 204 }).as("deleteDocument");
     cy.visit(`/account/projects/${projectId}/documents`);
-    cy.get('input[type="file"]').selectFile({ contents: Cypress.Buffer.from("test"), fileName: "plan.pdf", mimeType: "application/pdf" }, { force: true });
+    cy.get('input[type="file"]').selectFile({ contents: Cypress.Buffer.from("test"), fileName, mimeType: "application/pdf" }, { force: true });
     cy.wait("@uploadDocument");
-    cy.contains("a", "plan.pdf").should("have.attr", "target", "_blank");
+    cy.contains("a", fileName).should("have.attr", "target", "_blank");
     cy.on("window:confirm", () => true);
-    cy.get('button[aria-label="Удалить plan.pdf"]').click();
+    cy.get(`button[aria-label="Удалить ${fileName}"]`).click();
     cy.wait("@deleteDocument");
-    cy.contains("a", "plan.pdf").should("not.exist");
+    cy.contains("a", fileName).should("not.exist");
   });
 });

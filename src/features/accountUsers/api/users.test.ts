@@ -21,7 +21,7 @@ describe("admin users API", () => {
   });
 
   it("sends optimistic version and either supported status action", async () => {
-    Object.defineProperty(document, "cookie", { configurable: true, value: "theme=dark; __Host-arhdesign_csrf=token%20value" });
+    Object.defineProperty(document, "cookie", { configurable: true, value: "theme=dark; arhdesign_csrf=token%20value" });
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify(user), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     await changeAdminUserStatus(user, "disable");

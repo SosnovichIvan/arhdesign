@@ -1108,7 +1108,7 @@ paths:
     put:
       tags: [Projects]
       operationId: openProjectContextChat
-      summary: Open the unique contextual chat for a task, material, or expense
+      summary: Open the unique contextual chat for a task, material, expense, or document
       security:
         - accountSession: []
           csrfHeader: []
@@ -1350,7 +1350,8 @@ paths:
         - name: X-File-Name
           in: header
           required: true
-          schema: { type: string, minLength: 1, maxLength: 240 }
+          description: UTF-8 file name. Non-ASCII names use the `UTF-8''` prefix followed by percent-encoded UTF-8; legacy plain ASCII values remain supported.
+          schema: { type: string, minLength: 1, maxLength: 4096 }
       requestBody:
         required: true
         content:
@@ -2718,7 +2719,7 @@ components:
         unreadCount: { type: integer, minimum: 0 }
     ProjectChatContextType:
       type: string
-      enum: [task, material, expense]
+      enum: [task, material, expense, document]
     ProjectChatContext:
       type: object
       additionalProperties: false
@@ -2776,6 +2777,10 @@ components:
         createdAt: { type: string, format: date-time }
         canDelete: { type: boolean }
         version: { type: integer, format: int64, minimum: 1 }
+        contextChatId:
+          type: string
+          format: uuid
+          nullable: true
     ProjectDocumentList:
       type: object
       additionalProperties: false
@@ -3063,7 +3068,7 @@ components:
     CreateProjectTaskRequest:
       type: object
       additionalProperties: false
-      required: [title, dueAt]
+      required: [title, dueAt, assigneeUserIds]
       properties:
         title:
           type: string
@@ -3078,6 +3083,7 @@ components:
         assigneeUserIds:
           type: array
           uniqueItems: true
+          minItems: 1
           maxItems: 50
           items:
             type: string
@@ -3168,6 +3174,14 @@ components:
       properties:
         status:
           $ref: '#/components/schemas/ProjectTaskStatus'
+        assigneeUserIds:
+          type: array
+          uniqueItems: true
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            format: uuid
     CreateProjectMeetingRequest:
       type: object
       additionalProperties: false

@@ -1,14 +1,9 @@
-import { readApiError } from "@/shared/lib";
+import { csrfToken, readApiError } from "@/shared/lib";
 
 import type { CreateGlobalChatInput, GlobalChatCandidate, GlobalChatConversation, GlobalChatMessage, GlobalChatPage, GlobalChatSummary } from "../model/types";
 
 export class GlobalChatApiError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
-}
-
-function csrfToken() {
-  const cookie = document.cookie.split("; ").find((value) => value.startsWith("arhdesign_csrf=") || value.startsWith("__Host-arhdesign_csrf="));
-  return cookie ? decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)) : "";
 }
 
 async function expectJson<T>(response: Response, fallback: string): Promise<T> {

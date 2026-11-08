@@ -50,7 +50,7 @@ func TestProjectNotificationPersistencePropagatesTransactionFailures(t *testing.
 			return enqueueChatMemberNotification(ctx, tx, "project", "chat", "actor", "event", notification, now)
 		}},
 		{"task assignee notification", func(tx pgx.Tx) error {
-			return enqueueTaskAssigneeNotification(ctx, tx, "project", "task", "actor", notification, now)
+			return enqueueTaskAssigneeNotification(ctx, tx, "project", "task", "event", "actor", notification, now)
 		}},
 		{"context chat notification", func(tx pgx.Tx) error {
 			return enqueueContextChatNotification(ctx, tx, "project", "chat", "message", "actor", notification, now)
@@ -62,7 +62,7 @@ func TestProjectNotificationPersistencePropagatesTransactionFailures(t *testing.
 			return insertContextChatAccountNotifications(ctx, tx, "project", "chat", "message", "actor", notification, now)
 		}},
 		{"task assignee account notification", func(tx pgx.Tx) error {
-			return insertTaskAssigneeAccountNotifications(ctx, tx, "project", "task", "actor", notification, now)
+			return insertTaskAssigneeAccountNotifications(ctx, tx, "project", "task", "event", "actor", notification, now)
 		}},
 		{"scoped account notification", func(tx pgx.Tx) error {
 			return insertScopedAccountNotifications(ctx, tx, "project", "actor", "event", "entity", "target", notificationScopeTask, notification, now)

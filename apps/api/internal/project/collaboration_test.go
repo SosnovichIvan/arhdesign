@@ -116,6 +116,9 @@ func TestUploadDocumentValidatesAndReadsExactBody(t *testing.T) {
 	if _, err = service.UploadDocument(context.Background(), actor, projectID, "empty.pdf", "application/pdf", "request-123", bytes.NewReader(nil), 0); err != ErrInvalidInput {
 		t.Fatalf("empty upload error = %v", err)
 	}
+	if _, err = service.UploadDocument(context.Background(), actor, projectID, "plan\n.pdf", "application/pdf", "request-123", bytes.NewReader(body), int64(len(body))); err != ErrInvalidInput {
+		t.Fatalf("control character upload error = %v", err)
+	}
 }
 
 func TestCollaborationLifecycleCreatesUnifiedNotifications(t *testing.T) {

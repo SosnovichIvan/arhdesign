@@ -71,7 +71,9 @@ func TestNilProjectNotificationsAreNoops(t *testing.T) {
 		{"chat members", func() error {
 			return enqueueChatMemberNotification(ctx, nil, "project", "chat", "actor", "event", nil, now)
 		}},
-		{"task assignees", func() error { return enqueueTaskAssigneeNotification(ctx, nil, "project", "task", "actor", nil, now) }},
+		{"task assignees", func() error {
+			return enqueueTaskAssigneeNotification(ctx, nil, "project", "task", "event", "actor", nil, now)
+		}},
 		{"context chat", func() error {
 			return enqueueContextChatNotification(ctx, nil, "project", "chat", "message", "actor", nil, now)
 		}},
