@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectDocumentsPage } from "./projectDocumentsPage";
@@ -9,13 +9,16 @@ const api = vi.hoisted(() => ({
   deleteProjectDocument: vi.fn(),
   loadProject: vi.fn(),
   loadProjectDocuments: vi.fn(),
+  openProjectContextChat: vi.fn(),
   uploadProjectDocument: vi.fn(),
 }));
+const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("../api/projects", () => api);
 vi.mock("next/link", () => ({ default: ({ children, href, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} {...props}>{children}</a> }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 const project = { id: "project-1", name: "Дом", status: "active" };
-const documentItem = { canDelete: true, createdAt: "2026-09-30T10:00:00Z", id: "document/1", mediaType: "application/pdf", name: "План.pdf", projectId: "project-1", sizeBytes: 2048, uploadedByUserId: "user-1", version: 1 };
+const documentItem = { canDelete: true, contextChatId: null, createdAt: "2026-09-30T10:00:00Z", id: "document/1", mediaType: "application/pdf", name: "План.pdf", projectId: "project-1", sizeBytes: 2048, uploadedByUserId: "user-1", version: 1 };
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
@@ -32,6 +35,9 @@ describe("ProjectDocumentsPage", () => {
     vi.stubGlobal("confirm", vi.fn(() => true));
     render(<ProjectDocumentsPage projectId="project-1" />);
     expect(await screen.findByRole("link", { name: "План.pdf" })).toHaveProperty("href", expect.stringContaining("document%2F1"));
+    const titleRow = screen.getByRole("heading", { level: 1, name: "Документация" }).parentElement;
+    expect(titleRow?.className).toContain("justify-between");
+    expect(within(titleRow as HTMLElement).getByRole("button", { name: "Загрузить документ" })).toBeTruthy();
     expect(screen.getByText(/2 КБ/)).toBeTruthy();
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File(["content"], "Ведомость.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -56,6 +62,17 @@ describe("ProjectDocumentsPage", () => {
     fireEvent.change(document.querySelector('input[type="file"]')!, { target: { files: [oversized] } });
     expect(screen.getByRole("alert").textContent).toContain("10 МБ");
     expect(api.uploadProjectDocument).not.toHaveBeenCalled();
+  });
+
+  it("creates a contextual discussion for a document", async () => {
+    arrangeDocuments();
+    api.openProjectContextChat.mockResolvedValue({ chatId: "chat-1", contextId: documentItem.id, contextTitle: documentItem.name, contextType: "document", name: "Обсуждение: План.pdf", projectId: "project-1" });
+    render(<ProjectDocumentsPage projectId="project-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Обсудить «План.pdf»" }));
+    const dialog = screen.getByRole("dialog", { name: "Создание обсуждения «План.pdf»" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Создать обсуждение" }));
+    await waitFor(() => expect(api.openProjectContextChat).toHaveBeenCalledWith("project-1", "document", "document/1", "Обсуждение: План.pdf"));
+    expect(router.push).toHaveBeenCalledWith("/account/projects/project-1/chat/chat-1");
   });
 
   it("shows load, upload and delete errors and supports retry", async () => {

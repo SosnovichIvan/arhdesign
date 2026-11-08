@@ -35,6 +35,7 @@ function calls() {
     () => projects.addProjectChatMember("project/1", "chat/1", "user/1"),
     () => projects.removeProjectChatMember("project/1", "chat/1", "user/1"),
     () => projects.loadProjectDocuments("project/1"),
+    () => projects.loadProjectDocumentBlob("project/1", "document/1"),
     () => projects.uploadProjectDocument("project/1", file),
     () => projects.deleteProjectDocument("project/1", "document/1"),
     () => projects.sendProjectChatMessage("project/1", "Сообщение", "client-1"),
@@ -52,6 +53,7 @@ function calls() {
     () => projects.createProjectTask("project/1", payload),
     () => projects.loadProjectTasks("project/1"),
     () => projects.updateProjectTaskStatus("project/1", "task/1", 5, "review"),
+    () => projects.updateProjectTaskAssignees("project/1", "task/1", 5, ["user/1"]),
     () => projects.createProjectMeeting("project/1", payload),
   ];
 }
@@ -65,6 +67,7 @@ describe("project API", () => {
     expect(fetchMock).toHaveBeenCalledTimes(calls().length);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("project%2F1"))).toBe(true);
     expect(fetchMock.mock.calls.some(([, init]) => (init?.headers as Record<string, string> | undefined)?.["X-CSRF-Token"] === "csrf token")).toBe(true);
+    expect(fetchMock.mock.calls.some(([, init]) => (init?.headers as Record<string, string> | undefined)?.["X-File-Name"] === "UTF-8''%D0%9F%D0%BB%D0%B0%D0%BD.pdf")).toBe(true);
   });
 
   it("maps every failed request to ProjectApiError", async () => {
@@ -85,6 +88,7 @@ describe("project API", () => {
       () => projects.updateProject("p", 1, payload),
       () => projects.archiveProject("p", 1),
       () => projects.updateProjectTaskStatus("p", "t", 1, "accepted"),
+      () => projects.updateProjectTaskAssignees("p", "t", 1, ["u"]),
     ];
     for (const call of conflictCalls) await expect(call()).rejects.toBeInstanceOf(projects.ProjectApiError);
   });

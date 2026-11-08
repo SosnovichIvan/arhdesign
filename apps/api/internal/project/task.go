@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -44,16 +45,20 @@ type TaskQuery struct {
 
 type UpdateTaskRequest struct {
 	Status          string
+	AssigneeUserIDs *[]string
 	ExpectedVersion int64
 	RequestID       string
 }
 
 type UpdateTaskCommand struct {
 	Actor
-	ProjectID, TaskID, Status, RequestID string
-	ExpectedVersion                      int64
-	Now                                  time.Time
-	Notification                         *EventNotification
+	ProjectID, TaskID, RequestID string
+	Status                       string
+	AssigneeUserIDs              *[]string
+	ExpectedVersion              int64
+	Now                          time.Time
+	Notification                 *EventNotification
+	AssignmentNotification       *EventNotification
 }
 
 func (service *Service) ListTasks(ctx context.Context, actor Actor, projectID string) (TaskList, error) {
@@ -68,23 +73,47 @@ func (service *Service) ListTasks(ctx context.Context, actor Actor, projectID st
 }
 
 func (service *Service) UpdateTask(ctx context.Context, actor Actor, projectID, taskID string, request UpdateTaskRequest) (Task, error) {
-	if !validUUID(actor.UserID) || len(request.RequestID) < 8 || request.ExpectedVersion < 1 {
+	if !validUUID(actor.UserID) || len(request.RequestID) < 8 || request.ExpectedVersion < 1 || (request.Status == "" && request.AssigneeUserIDs == nil) {
 		return Task{}, ErrInvalidInput
 	}
 	if !validUUID(projectID) || !validUUID(taskID) {
 		return Task{}, ErrNotFound
 	}
-	if _, ok := taskStatuses[request.Status]; !ok {
-		return Task{}, ErrInvalidInput
+	var statusNotification *EventNotification
+	if request.Status != "" {
+		status := strings.TrimSpace(request.Status)
+		if _, ok := taskStatuses[status]; !ok {
+			return Task{}, ErrInvalidInput
+		}
+		request.Status = status
+		var err error
+		statusNotification, err = service.eventNotification("project.task.status_changed", "Статус задачи изменён\nЗадача: "+taskID+"\nНовый статус: "+taskStatusLabel(status))
+		if err != nil {
+			return Task{}, err
+		}
 	}
-	notification, err := service.eventNotification("project.task.status_changed", "Статус задачи изменён\nЗадача: "+taskID+"\nНовый статус: "+taskStatusLabel(request.Status))
-	if err != nil {
-		return Task{}, err
+	var assignmentNotification *EventNotification
+	if request.AssigneeUserIDs != nil {
+		assignees := uniqueIDs(*request.AssigneeUserIDs)
+		if len(assignees) != len(*request.AssigneeUserIDs) || len(assignees) < 1 || len(assignees) > 50 {
+			return Task{}, ErrInvalidInput
+		}
+		for _, assignee := range assignees {
+			if !validUUID(assignee) {
+				return Task{}, ErrInvalidInput
+			}
+		}
+		request.AssigneeUserIDs = &assignees
+		var err error
+		assignmentNotification, err = service.eventNotification("project.task.assignees_changed", "Изменён состав ответственных по задаче\nЗадача: "+taskID)
+		if err != nil {
+			return Task{}, err
+		}
 	}
 	return service.store.UpdateProjectTask(ctx, UpdateTaskCommand{
-		Actor: actor, ProjectID: projectID, TaskID: taskID, Status: request.Status,
+		Actor: actor, ProjectID: projectID, TaskID: taskID, Status: request.Status, AssigneeUserIDs: request.AssigneeUserIDs,
 		ExpectedVersion: request.ExpectedVersion, RequestID: request.RequestID, Now: service.now().UTC(),
-		Notification: notification,
+		Notification: statusNotification, AssignmentNotification: assignmentNotification,
 	})
 }
 

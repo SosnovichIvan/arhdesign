@@ -8,7 +8,7 @@ afterEach(() => { vi.unstubAllGlobals(); Object.defineProperty(document, "cookie
 
 describe("notifications API", () => {
   it("loads and marks one or all notifications with CSRF", async () => {
-    Object.defineProperty(document, "cookie", { configurable: true, value: "theme=dark; __Host-arhdesign_csrf=csrf%20token" });
+    Object.defineProperty(document, "cookie", { configurable: true, value: "theme=dark; arhdesign_csrf=csrf%20token" });
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ items: [], unreadCount: 0 }), { status: 200 })));
     vi.stubGlobal("fetch", fetchMock);
     await loadAccountNotifications();

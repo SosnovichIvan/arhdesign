@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 import { Button, DatePicker, Dialog, IconButton, Input, Select, Textarea } from "@/shared/ui";
 
-import { createProjectTask, loadCurrentAccount, loadProject, loadProjectMembers, loadProjectTasks, updateProjectTaskStatus } from "../api/projects";
+import { createProjectTask, loadCurrentAccount, loadProject, loadProjectMembers, loadProjectTasks, updateProjectTaskAssignees, updateProjectTaskStatus } from "../api/projects";
 import type { ProjectMember, ProjectTask, ProjectTaskStatus, ProjectView } from "../model/types";
 import { ContextChatAction } from "./contextChatAction";
 
@@ -113,7 +113,7 @@ export function ProjectTasksPage({ projectId }: Readonly<{ projectId: string }>)
           {activeFilterCount > 0 ? <span aria-hidden="true" className="absolute -right-1 -top-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-action px-1 text-[10px] font-bold text-inverse-text" data-cy="task-filter-count">{activeFilterCount}</span> : null}
         </div>
       </div>
-      {tasks.length === 0 ? <EmptyState canCreate={canCreate} onCreate={() => setFormOpen(true)} title="В проекте пока нет задач" /> : visibleTasks.length === 0 ? <EmptyState canCreate={false} onCreate={() => undefined} title="По выбранным фильтрам задач нет" /> : <ul className="mt-5 grid gap-3" data-cy="project-task-list">{visibleTasks.map((task) => <TaskRow key={task.id} onUpdated={(updated) => { setTasks((current) => current.map((item) => item.id === updated.id ? updated : item)); setNotice("Статус задачи обновлён"); }} projectId={projectId} task={task} />)}</ul>}
+      {tasks.length === 0 ? <EmptyState canCreate={canCreate} onCreate={() => setFormOpen(true)} title="В проекте пока нет задач" /> : visibleTasks.length === 0 ? <EmptyState canCreate={false} onCreate={() => undefined} title="По выбранным фильтрам задач нет" /> : <ul className="mt-5 grid gap-3" data-cy="project-task-list">{visibleTasks.map((task) => <TaskRow key={task.id} members={members} onUpdated={(updated, message) => { setTasks((current) => current.map((item) => item.id === updated.id ? updated : item)); setNotice(message); }} projectId={projectId} task={task} />)}</ul>}
     </> : null}
     {filtersOpen ? <Dialog isOpen label="Расширенные фильтры задач" onClose={() => setFiltersOpen(false)}><TaskFiltersForm initial={filters} members={members} onApply={(nextFilters) => { setFilters(nextFilters); setFiltersOpen(false); }} onCancel={() => setFiltersOpen(false)} /></Dialog> : null}
     <Dialog isOpen={formOpen} label="Создание задачи" onClose={() => setFormOpen(false)}><CreateTaskForm members={members} onCancel={() => setFormOpen(false)} onCreated={() => { setFormOpen(false); reload("Задача создана"); }} projectId={projectId} /></Dialog>
@@ -141,24 +141,32 @@ function TaskFiltersForm({ initial, members, onApply, onCancel }: Readonly<{ ini
   </form>;
 }
 
-function TaskRow({ onUpdated, projectId, task }: Readonly<{ onUpdated: (task: ProjectTask) => void; projectId: string; task: ProjectTask }>) {
+function TaskRow({ members, onUpdated, projectId, task }: Readonly<{ members: ProjectMember[]; onUpdated: (task: ProjectTask, message: string) => void; projectId: string; task: ProjectTask }>) {
   const [pending, setPending] = useState(false); const [error, setError] = useState("");
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [renderedAt] = useState(() => Date.now());
   const overdue = task.status !== "accepted" && new Date(task.dueAt).getTime() < renderedAt;
   async function changeStatus(value: string) {
     if (value === task.status) return;
     setPending(true); setError("");
-    try { onUpdated(await updateProjectTaskStatus(projectId, task.id, task.version, value as ProjectTaskStatus)); }
+    try { onUpdated(await updateProjectTaskStatus(projectId, task.id, task.version, value as ProjectTaskStatus), "Статус задачи обновлён"); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Не удалось изменить статус"); }
     finally { setPending(false); }
   }
   return <li className="border border-border bg-surface p-5" data-cy={`project-task-${task.id}`}>
     <div className="grid gap-5 desktop:grid-cols-[minmax(0,1fr)_220px_190px] desktop:items-start">
-      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${statusTone(task.status)}`}>{statusLabels[task.status]}</span>{overdue ? <span className="text-xs font-semibold text-red-700">Просрочено</span> : null}</div><h2 className="mt-3 text-lg font-medium">{task.title}</h2>{task.description ? <p className="mt-2 text-sm leading-6 text-secondary">{task.description}</p> : null}<p className="mt-4 text-xs text-secondary">Ответственные: {task.assignees.length > 0 ? task.assignees.map(assigneeName).join(", ") : "не назначены"}</p>{error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}</div>
+      <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${statusTone(task.status)}`}>{statusLabels[task.status]}</span>{overdue ? <span className="text-xs font-semibold text-red-700">Просрочено</span> : null}</div><h2 className="mt-3 text-lg font-medium">{task.title}</h2>{task.description ? <p className="mt-2 text-sm leading-6 text-secondary">{task.description}</p> : null}<div className="mt-4 flex items-center gap-2"><p className="text-xs text-secondary">Ответственные: {task.assignees.length > 0 ? task.assignees.map(assigneeName).join(", ") : "не назначены"}</p>{task.canEdit?<IconButton aria-label={`Изменить ответственного задачи «${task.title}»`} className="size-8 border-icon-button-border bg-icon-button text-icon-button-text" data-cy={`edit-task-assignee-${task.id}`} onClick={()=>setAssigneeOpen(true)} tooltip="Изменить ответственного"><EditAssigneeIcon/></IconButton>:null}</div>{error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}</div>
       <div><p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-secondary">Дедлайн</p><time className={`mt-2 block text-sm ${overdue ? "font-semibold text-red-700" : "text-primary"}`} dateTime={task.dueAt}>{formatDateTime(task.dueAt)}</time>{task.startedAt ? <p className="mt-3 text-xs text-secondary">Старт: {formatDateTime(task.startedAt)}</p> : null}{task.completedAt ? <p className="mt-1 text-xs text-secondary">Завершение: {formatDateTime(task.completedAt)}</p> : null}</div>
       <div className="flex items-start gap-2"><div className="min-w-0 flex-1">{task.canChangeStatus ? <Select disabled={pending} label="Изменить статус" onValueChange={(value) => void changeStatus(value)} options={statusOptionsForTask(task)} value={task.status} /> : <p className="pt-2 text-xs text-secondary">Только просмотр</p>}</div><ContextChatAction chatId={task.contextChatId} contextId={task.id} contextTitle={task.title} contextType="task" projectId={projectId} /></div>
     </div>
+    <Dialog isOpen={assigneeOpen} label={`Изменение ответственного задачи «${task.title}»`} onClose={()=>setAssigneeOpen(false)}><TaskAssigneeForm members={members} onCancel={()=>setAssigneeOpen(false)} onSaved={(updated)=>{onUpdated(updated,"Ответственный изменён");setAssigneeOpen(false);}} projectId={projectId} task={task}/></Dialog>
   </li>;
+}
+
+function TaskAssigneeForm({ members, onCancel, onSaved, projectId, task }: Readonly<{ members: ProjectMember[]; onCancel: () => void; onSaved: (task: ProjectTask) => void; projectId: string; task: ProjectTask }>) {
+  const [assignee, setAssignee] = useState(task.assignees[0]?.userId ?? ""); const [pending, setPending] = useState(false); const [error, setError] = useState("");
+  async function submit(event: FormEvent) { event.preventDefault(); setError(""); if (!assignee) { setError("Выберите ответственного из участников проекта"); return; } setPending(true); try { onSaved(await updateProjectTaskAssignees(projectId, task.id, task.version, [assignee])); } catch (reason) { setError(reason instanceof Error ? reason.message : "Не удалось изменить ответственного"); } finally { setPending(false); } }
+  return <form data-cy="task-assignee-form" noValidate onSubmit={submit}><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Задача проекта</p><h2 className="mt-3 font-display text-4xl">Ответственный</h2><p className="mt-3 text-sm leading-6 text-secondary">Выберите участника, который отвечает за задачу «{task.title}».</p><div className="mt-7"><Select disabled={pending || members.length===0} label="Ответственный" onValueChange={setAssignee} options={[{label:members.length===0?"Сначала добавьте участника в проект":"Выберите участника",value:""},...members.map((member)=>({label:memberName(member),value:member.userId}))]} required value={assignee}/></div>{error?<p className="mt-4 text-sm text-red-700" role="alert">{error}</p>:null}<div className="mt-7 flex gap-3"><Button disabled={pending || members.length===0} type="submit">{pending?"Сохраняем…":"Сохранить"}</Button><Button disabled={pending} onClick={onCancel} type="button" variant="secondary">Отмена</Button></div></form>;
 }
 
 function CreateTaskForm({ members, onCancel, onCreated, projectId }: Readonly<{ members: ProjectMember[]; onCancel: () => void; onCreated: () => void; projectId: string }>) {
@@ -196,3 +204,4 @@ function statusOptionsForTask(task: ProjectTask): typeof taskStatusOptions {
 function statusTone(status: ProjectTaskStatus) { if (status === "accepted") return "bg-green-700/15 text-green-800 dark:text-green-300"; if (status === "changes_requested") return "bg-red-700/10 text-red-700 dark:text-red-300"; if (status === "review") return "bg-amber-600/15 text-amber-800 dark:text-amber-300"; if (status === "in_progress") return "bg-action/20 text-primary"; return "bg-page text-secondary"; }
 function PlusIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" /></svg>; }
 function FilterIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M10 14v6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" /></svg>; }
+function EditAssigneeIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.6"/><path d="M3.5 19c.6-3 2.4-5 5.5-5 1.5 0 2.8.5 3.7 1.4M16 13l4 4m0-4-4 4" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6"/></svg>; }

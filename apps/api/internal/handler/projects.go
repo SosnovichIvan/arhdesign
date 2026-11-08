@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	accountgenerated "github.com/SosnovichIvan/arhdesign/apps/api/internal/accountapi/generated"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/project"
@@ -688,12 +690,29 @@ func (endpoint *AccountEndpoint) UploadProjectDocument(w http.ResponseWriter, r 
 	if mediaType == "" {
 		mediaType = "application/octet-stream"
 	}
-	document, err := endpoint.projects.UploadDocument(r.Context(), actor, projectID.String(), params.XFileName, mediaType, requestID, r.Body, r.ContentLength)
+	fileName, err := decodeProjectDocumentName(params.XFileName)
+	if err != nil {
+		writeAccountError(w, http.StatusBadRequest, "validation_error", "Некорректное имя файла", requestID)
+		return
+	}
+	document, err := endpoint.projects.UploadDocument(r.Context(), actor, projectID.String(), fileName, mediaType, requestID, r.Body, r.ContentLength)
 	if err != nil {
 		endpoint.writeProjectError(w, err, requestID)
 		return
 	}
 	writeAccountJSON(w, http.StatusCreated, projectDocumentResponse(document))
+}
+
+func decodeProjectDocumentName(value string) (string, error) {
+	const utf8Prefix = "UTF-8''"
+	if !strings.HasPrefix(value, utf8Prefix) {
+		return value, nil
+	}
+	decoded, err := url.PathUnescape(strings.TrimPrefix(value, utf8Prefix))
+	if err != nil || !utf8.ValidString(decoded) {
+		return "", errors.New("invalid UTF-8 file name")
+	}
+	return decoded, nil
 }
 
 func (endpoint *AccountEndpoint) DownloadProjectDocument(w http.ResponseWriter, r *http.Request, projectID accountgenerated.ProjectId, documentID openapi_types.UUID) {
@@ -918,11 +937,9 @@ func (endpoint *AccountEndpoint) CreateProjectTask(w http.ResponseWriter, r *htt
 	if body.Description != nil {
 		description = *body.Description
 	}
-	assignees := make([]string, 0)
-	if body.AssigneeUserIds != nil {
-		for _, assignee := range *body.AssigneeUserIds {
-			assignees = append(assignees, assignee.String())
-		}
+	assignees := make([]string, 0, len(body.AssigneeUserIds))
+	for _, assignee := range body.AssigneeUserIds {
+		assignees = append(assignees, assignee.String())
 	}
 	item, err := endpoint.projects.CreateTask(r.Context(), actor, projectID.String(), project.CreateTaskRequest{Title: body.Title, Description: description, AssigneeUserIDs: assignees, DueAt: body.DueAt, RequestID: requestID})
 	if err != nil {
@@ -962,11 +979,23 @@ func (endpoint *AccountEndpoint) UpdateProjectTask(w http.ResponseWriter, r *htt
 		return
 	}
 	var body accountgenerated.UpdateProjectTaskRequest
-	if !decodeAccountJSON(r, &body) || body.Status == nil {
+	if !decodeAccountJSON(r, &body) || (body.Status == nil && body.AssigneeUserIds == nil) {
 		writeAccountError(w, http.StatusBadRequest, "validation_error", "Проверьте данные задачи", requestID)
 		return
 	}
-	item, err := endpoint.projects.UpdateTask(r.Context(), actor, projectID.String(), taskID.String(), project.UpdateTaskRequest{Status: string(*body.Status), ExpectedVersion: params.IfMatch, RequestID: requestID})
+	status := ""
+	if body.Status != nil {
+		status = string(*body.Status)
+	}
+	var assignees *[]string
+	if body.AssigneeUserIds != nil {
+		values := make([]string, 0, len(*body.AssigneeUserIds))
+		for _, assignee := range *body.AssigneeUserIds {
+			values = append(values, assignee.String())
+		}
+		assignees = &values
+	}
+	item, err := endpoint.projects.UpdateTask(r.Context(), actor, projectID.String(), taskID.String(), project.UpdateTaskRequest{Status: status, AssigneeUserIDs: assignees, ExpectedVersion: params.IfMatch, RequestID: requestID})
 	if err != nil {
 		endpoint.writeProjectError(w, err, requestID)
 		return
@@ -1199,7 +1228,12 @@ func projectChatMemberResponse(value project.ChatMember) accountgenerated.Projec
 }
 
 func projectDocumentResponse(value project.ProjectDocument) accountgenerated.ProjectDocument {
-	return accountgenerated.ProjectDocument{Id: uuid.MustParse(value.ID), ProjectId: uuid.MustParse(value.ProjectID), Name: value.Name, MediaType: value.MediaType, SizeBytes: value.SizeBytes, UploadedByUserId: uuid.MustParse(value.UploadedByUserID), CreatedAt: value.CreatedAt, CanDelete: value.CanDelete, Version: value.Version}
+	response := accountgenerated.ProjectDocument{Id: uuid.MustParse(value.ID), ProjectId: uuid.MustParse(value.ProjectID), Name: value.Name, MediaType: value.MediaType, SizeBytes: value.SizeBytes, UploadedByUserId: uuid.MustParse(value.UploadedByUserID), CreatedAt: value.CreatedAt, CanDelete: value.CanDelete, Version: value.Version}
+	if value.ContextChatID != nil {
+		chatID := openapi_types.UUID(uuid.MustParse(*value.ContextChatID))
+		response.ContextChatId = &chatID
+	}
+	return response
 }
 
 func projectChatContextResponse(value project.ChatContext) accountgenerated.ProjectChatContext {

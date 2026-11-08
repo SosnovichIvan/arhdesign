@@ -2,6 +2,7 @@
 .next
 .execution-state
 node_modules
+video-work
 coverage
 .env
 .env.*

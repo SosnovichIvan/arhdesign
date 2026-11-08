@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -62,5 +63,11 @@ func TestMapContextEntityReadError(t *testing.T) {
 	original := errors.New("database unavailable")
 	if err := mapContextEntityReadError("expense", original); !errors.Is(err, original) {
 		t.Fatalf("wrapped error=%v", err)
+	}
+}
+
+func TestContextEntityTitleRejectsUnknownType(t *testing.T) {
+	if _, err := contextEntityTitle(context.Background(), nil, project.Actor{}, "project", "unknown", "entity"); !errors.Is(err, project.ErrNotFound) {
+		t.Fatalf("unknown context type error=%v", err)
 	}
 }

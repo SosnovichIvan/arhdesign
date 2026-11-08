@@ -73,8 +73,8 @@ describe("CreateProjectForm", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/?auth=login"));
   });
 
-	it("reads the secure CSRF cookie and submits disabled auto-approval", async () => {
-		Object.defineProperty(document, "cookie", { configurable: true, value: "__Host-arhdesign_csrf=secure-csrf" });
+	it("reads the local CSRF cookie and submits disabled auto-approval", async () => {
+		Object.defineProperty(document, "cookie", { configurable: true, value: "arhdesign_csrf=secure-csrf" });
 		const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "project-2" }), { status: 201 }));
 		vi.stubGlobal("fetch", fetchMock);
 		render(<CreateProjectForm />);

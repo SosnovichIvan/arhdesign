@@ -88,7 +88,7 @@ export type ProjectChatMessage = {
   projectId: string;
   version: number;
 };
-export type ProjectChatContextType = "task" | "material" | "expense";
+export type ProjectChatContextType = "task" | "material" | "expense" | "document";
 export type ProjectChatContext = {
   chatId: string;
   contextId: string;
@@ -124,7 +124,7 @@ export type ProjectChatSummary = {
 export type ProjectChatList = { canCreate: boolean; items: ProjectChatSummary[] };
 export type ProjectChatMember = { firstName: string; joinedAt: string; lastName: string | null; login: string; removable: boolean; userId: string };
 export type ProjectChatMemberList = { canManage: boolean; items: ProjectChatMember[] };
-export type ProjectDocument = { canDelete: boolean; createdAt: string; id: string; mediaType: string; name: string; projectId: string; sizeBytes: number; uploadedByUserId: string; version: number };
+export type ProjectDocument = { canDelete: boolean; contextChatId: string | null; createdAt: string; id: string; mediaType: string; name: string; projectId: string; sizeBytes: number; uploadedByUserId: string; version: number };
 export type ProjectDocumentList = { canUpload: boolean; items: ProjectDocument[] };
 
 export type ProjectUpcomingItem = {
@@ -173,7 +173,7 @@ export type ProjectTask = {
   contextChatId: string | null;
 };
 export type ProjectTaskList = { canCreate: boolean; items: ProjectTask[] };
-export type CreateProjectTaskPayload = { assigneeUserIds?: string[]; description?: string; dueAt: string; title: string };
+export type CreateProjectTaskPayload = { assigneeUserIds: string[]; description?: string; dueAt: string; title: string };
 export type CreateProjectMeetingPayload = { description?: string; endsAt: string; location?: string; startsAt: string; title: string };
 
 export type ExpenseCategory = "materials" | "furniture" | "contractor" | "delivery" | "installation" | "design" | "other";
