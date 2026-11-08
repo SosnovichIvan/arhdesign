@@ -1,11 +1,6 @@
-import { readApiError } from "@/shared/lib";
+import { csrfToken, readApiError } from "@/shared/lib";
 
 export type FeedbackCategory = "complaint" | "suggestion";
-
-function csrfToken() {
-  const cookie = document.cookie.split("; ").find((value) => value.startsWith("arhdesign_csrf=") || value.startsWith("__Host-arhdesign_csrf="));
-  return cookie ? decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)) : "";
-}
 
 async function post(path: string, payload: object, fallback: string) {
   const response = await fetch(path, { body: JSON.stringify(payload), credentials: "same-origin", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrfToken() }, method: "POST" });

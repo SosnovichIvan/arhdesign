@@ -21,6 +21,10 @@ func TestTaskServiceListsAndUpdatesWithValidatedContract(t *testing.T) {
 	if err != nil || updated.Status != TaskInProgress || store.updateTask.Now != now {
 		t.Fatalf("updated=%#v command=%#v error=%v", updated, store.updateTask, err)
 	}
+	assignees := []string{"00000000-0000-0000-0000-000000000004"}
+	if _, err = service.UpdateTask(context.Background(), actor, projectID, "00000000-0000-0000-0000-000000000003", UpdateTaskRequest{AssigneeUserIDs: &assignees, ExpectedVersion: 2, RequestID: "request-task-assignee"}); err != nil || store.updateTask.AssigneeUserIDs == nil || (*store.updateTask.AssigneeUserIDs)[0] != assignees[0] {
+		t.Fatalf("assignee command=%#v error=%v", store.updateTask, err)
+	}
 }
 
 func TestTaskServiceRejectsInvalidStatusAndAssignees(t *testing.T) {
@@ -34,5 +38,16 @@ func TestTaskServiceRejectsInvalidStatusAndAssignees(t *testing.T) {
 	}
 	if _, err := service.CreateTask(context.Background(), actor, projectID, CreateTaskRequest{Title: "Задача", DueAt: now.Add(time.Hour), AssigneeUserIDs: []string{"00000000-0000-0000-0000-000000000004", "00000000-0000-0000-0000-000000000004"}, RequestID: "request-task-create"}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("duplicate assignee error=%v", err)
+	}
+	if _, err := service.CreateTask(context.Background(), actor, projectID, CreateTaskRequest{Title: "Задача", DueAt: now.Add(time.Hour), RequestID: "request-task-create"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("missing assignee error=%v", err)
+	}
+	duplicateAssignees := []string{"00000000-0000-0000-0000-000000000004", "00000000-0000-0000-0000-000000000004"}
+	if _, err := service.UpdateTask(context.Background(), actor, projectID, "00000000-0000-0000-0000-000000000003", UpdateTaskRequest{AssigneeUserIDs: &duplicateAssignees, ExpectedVersion: 1, RequestID: "request-task-assignee"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("duplicate updated assignee error=%v", err)
+	}
+	invalidAssignees := []string{"not-a-user-id"}
+	if _, err := service.UpdateTask(context.Background(), actor, projectID, "00000000-0000-0000-0000-000000000003", UpdateTaskRequest{AssigneeUserIDs: &invalidAssignees, ExpectedVersion: 1, RequestID: "request-task-assignee"}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("invalid updated assignee error=%v", err)
 	}
 }

@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 
-import { Button, DatePicker, Dialog, IconButton, Input, Textarea } from "@/shared/ui";
+import { Button, DatePicker, Dialog, IconButton, Input, Select, Textarea } from "@/shared/ui";
 
-import { createProjectMeeting, createProjectTask, loadProjectUpcoming, loadProjectUserSettings, updateProjectUserSettings } from "../api/projects";
-import type { ProjectUpcomingItem } from "../model/types";
+import { createProjectMeeting, createProjectTask, loadProjectMembers, loadProjectUpcoming, loadProjectUserSettings, updateProjectUserSettings } from "../api/projects";
+import type { ProjectMember, ProjectUpcomingItem } from "../model/types";
 
 type Filter = "all" | "task" | "meeting";
 
@@ -96,22 +96,32 @@ function ActionIcon({ children, label, onClick }: Readonly<{ children: ReactNode
 }
 
 function TaskForm({ onCancel, onCreated, projectId }: Readonly<{ onCancel: () => void; onCreated: () => void; projectId: string }>) {
-  const [title, setTitle] = useState(""); const [description, setDescription] = useState(""); const [date, setDate] = useState(""); const [time, setTime] = useState("12:00");
+  const [title, setTitle] = useState(""); const [description, setDescription] = useState(""); const [date, setDate] = useState(""); const [time, setTime] = useState("12:00"); const [assignee, setAssignee] = useState("");
+  const [members, setMembers] = useState<ProjectMember[]>([]); const [membersLoading, setMembersLoading] = useState(true);
   const [pending, setPending] = useState(false); const [error, setError] = useState(""); const [deadlineError, setDeadlineError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    void loadProjectMembers(projectId, controller.signal).then((list) => { setMembers(list.items); setMembersLoading(false); }).catch((reason: unknown) => {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      setError(reason instanceof Error ? reason.message : "Не удалось загрузить участников проекта"); setMembersLoading(false);
+    });
+    return () => controller.abort();
+  }, [projectId]);
   async function submit(event: FormEvent) {
     event.preventDefault(); setError(""); setDeadlineError("");
     if (title.trim().length < 2) { setError("Укажите название задачи — минимум 2 символа"); return; }
+    if (!assignee) { setError("Выберите ответственного из участников проекта"); return; }
     if (!date) { setDeadlineError("Выберите дату дедлайна"); return; }
     if (!time) { setDeadlineError("Укажите время дедлайна"); return; }
     const dueAt = localInstant(date, time);
     if (!dueAt) { setDeadlineError("Проверьте дату и время дедлайна"); return; }
     if (dueAt <= new Date()) { setDeadlineError("Выбранный дедлайн уже прошёл. Выберите более позднее время или следующий день"); return; }
     setPending(true);
-    try { await createProjectTask(projectId, { title: title.trim(), description: description.trim() || undefined, dueAt: dueAt.toISOString() }); onCreated(); }
+    try { await createProjectTask(projectId, { assigneeUserIds: [assignee], title: title.trim(), description: description.trim() || undefined, dueAt: dueAt.toISOString() }); onCreated(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Не удалось создать задачу"); }
     finally { setPending(false); }
   }
-  return <form data-cy="create-task-form" noValidate onSubmit={submit}><FormHeading eyebrow="Задача" title="Новая задача" /><div className="mt-8 grid gap-6"><label className="grid gap-2 text-sm font-medium">Название *<Input autoFocus data-dialog-initial-focus maxLength={200} onChange={(event) => setTitle(event.target.value)} value={title} /></label><label className="grid gap-2 text-sm font-medium">Описание<Textarea maxLength={5000} onChange={(event) => setDescription(event.target.value)} value={description} /></label><DateTimeFields date={date} dateLabel="Дедлайн" error={deadlineError} min={todayDateValue()} onDateChange={(value) => { setDate(value); setDeadlineError(""); }} onTimeChange={(value) => { setTime(value); setDeadlineError(""); }} time={time} /></div><FormActions error={error} onCancel={onCancel} pending={pending} submitLabel="Создать задачу" /></form>;
+  return <form data-cy="create-task-form" noValidate onSubmit={submit}><FormHeading eyebrow="Задача" title="Новая задача" /><div className="mt-8 grid gap-6"><label className="grid gap-2 text-sm font-medium">Название *<Input autoFocus data-dialog-initial-focus maxLength={200} onChange={(event) => setTitle(event.target.value)} value={title} /></label><label className="grid gap-2 text-sm font-medium">Описание<Textarea maxLength={5000} onChange={(event) => setDescription(event.target.value)} value={description} /></label><Select disabled={membersLoading || pending || members.length === 0} label="Ответственный" onValueChange={setAssignee} options={[{ label: membersLoading ? "Загружаем участников…" : members.length === 0 ? "Сначала добавьте участника в проект" : "Выберите участника", value: "" }, ...members.map((member) => ({ label: memberName(member), value: member.userId }))]} required value={assignee}/><DateTimeFields date={date} dateLabel="Дедлайн" error={deadlineError} min={todayDateValue()} onDateChange={(value) => { setDate(value); setDeadlineError(""); }} onTimeChange={(value) => { setTime(value); setDeadlineError(""); }} time={time} /></div><FormActions error={error} onCancel={onCancel} pending={pending || membersLoading} submitLabel="Создать задачу" /></form>;
 }
 
 function MeetingForm({ onCancel, onCreated, projectId }: Readonly<{ onCancel: () => void; onCreated: () => void; projectId: string }>) {
@@ -161,6 +171,7 @@ function todayDateValue() { const today = new Date(); const month = String(today
 function formatUpcomingDate(value: string) { return new Intl.DateTimeFormat("ru-RU", { day: "numeric", hour: "2-digit", minute: "2-digit", month: "short" }).format(new Date(value)); }
 function formatTime(value: string) { return new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
 function dayLabel(value: number) { const modulo100 = value % 100; const modulo10 = value % 10; if (modulo100 >= 11 && modulo100 <= 14) return "дней"; if (modulo10 === 1) return "день"; if (modulo10 >= 2 && modulo10 <= 4) return "дня"; return "дней"; }
+function memberName(member: Pick<ProjectMember, "firstName" | "lastName" | "login">) { return `${[member.firstName, member.lastName].filter(Boolean).join(" ")} · @${member.login}`; }
 function TaskIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24"><path d="M9 5h10M9 12h10M9 19h6M4 5h.01M4 12h.01M4 19h.01" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" /><path d="M18 16v6m-3-3h6" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" /></svg>; }
 function MeetingIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24"><rect height="16" rx="2" stroke="currentColor" strokeWidth="1.7" width="18" x="3" y="5" /><path d="M7 3v4m10-4v4M3 10h18" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" /><path d="M8 14h3m2 0h3m-8 3h3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.7" /></svg>; }
 function SettingsIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.09a2 2 0 0 1 1 1.74v.5a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" /><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" /></svg>; }

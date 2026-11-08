@@ -58,4 +58,10 @@ describe("Dialog", () => {
     fireEvent.keyDown(dialog, { key: "Tab" });
     expect(dialog).toBeTruthy();
   });
+
+  it("supports a contextual close label", () => {
+    render(<Dialog closeLabel="Закрыть просмотр" isOpen label="Просмотр" onClose={vi.fn()}><iframe src="about:blank" tabIndex={0} title="Документ" /></Dialog>);
+    expect(screen.getByRole("button", { name: "Закрыть просмотр" })).toBeTruthy();
+    expect(screen.getByTitle("Документ").getAttribute("tabindex")).toBe("0");
+  });
 });

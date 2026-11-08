@@ -88,15 +88,27 @@ func (repository *Postgres) UpdateProjectTask(ctx context.Context, command proje
 	if err != nil {
 		return project.Task{}, err
 	}
-	if !canManage && !(assigned && (command.Status == project.TaskInProgress || command.Status == project.TaskReview)) && !(customer && (command.Status == project.TaskAccepted || command.Status == project.TaskChangesRequested)) {
+	if command.AssigneeUserIDs != nil {
+		if !canManage {
+			return project.Task{}, project.ErrForbidden
+		}
+		var activeAssignees int
+		if err = tx.QueryRow(ctx, `SELECT count(DISTINCT user_id) FROM project_memberships WHERE project_id=$1 AND user_id=ANY($2::uuid[]) AND revoked_at IS NULL`, command.ProjectID, *command.AssigneeUserIDs).Scan(&activeAssignees); err != nil {
+			return project.Task{}, fmt.Errorf("check updated project task assignees: %w", err)
+		}
+		if activeAssignees != len(*command.AssigneeUserIDs) {
+			return project.Task{}, project.ErrAccountUnavailable
+		}
+	}
+	if command.Status != "" && !canManage && !(assigned && (command.Status == project.TaskInProgress || command.Status == project.TaskReview)) && !(customer && (command.Status == project.TaskAccepted || command.Status == project.TaskChangesRequested)) {
 		return project.Task{}, project.ErrForbidden
 	}
 	var item project.Task
 	err = tx.QueryRow(ctx, `
 		UPDATE project_tasks
-		SET status=$4,
-		    started_at=CASE WHEN $4='in_progress' THEN COALESCE(started_at,$5) ELSE started_at END,
-		    completed_at=CASE WHEN $4 IN ('review','accepted') THEN COALESCE(completed_at,$5) WHEN $4 IN ('in_progress','changes_requested') THEN NULL ELSE completed_at END,
+		SET status=COALESCE(NULLIF($4::text,''),status),
+		    started_at=CASE WHEN $4::text='in_progress' THEN COALESCE(started_at,$5) ELSE started_at END,
+		    completed_at=CASE WHEN $4::text IN ('review','accepted') THEN COALESCE(completed_at,$5) WHEN $4::text IN ('in_progress','changes_requested') THEN NULL ELSE completed_at END,
 		    updated_at=$5,version=version+1
 		WHERE project_id=$1 AND id=$2 AND version=$3
 		RETURNING id::text,project_id::text,title,description,status,due_at,started_at,completed_at,created_at,version
@@ -107,11 +119,33 @@ func (repository *Postgres) UpdateProjectTask(ctx context.Context, command proje
 	if err != nil {
 		return project.Task{}, mapProjectWriteError("update project task", err)
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO audit_events (event_type,result,request_id,actor_user_id,subject_type,project_id,metadata,occurred_at) VALUES ('task.status_changed','success',$1,$2,'project_task',$3,jsonb_build_object('taskId',$4::text,'status',$5::text,'version',$6::bigint),$7)`, command.RequestID, command.UserID, command.ProjectID, command.TaskID, command.Status, item.Version, command.Now); err != nil {
-		return project.Task{}, fmt.Errorf("audit project task status update: %w", err)
+	if command.AssigneeUserIDs != nil {
+		if _, err = tx.Exec(ctx, `DELETE FROM project_task_assignees WHERE task_id=$1`, command.TaskID); err != nil {
+			return project.Task{}, mapProjectWriteError("replace project task assignees", err)
+		}
+		for _, assigneeID := range *command.AssigneeUserIDs {
+			if _, err = tx.Exec(ctx, `INSERT INTO project_task_assignees (task_id,user_id,assigned_by_user_id,assigned_at) VALUES ($1,$2,$3,$4)`, command.TaskID, assigneeID, command.UserID, command.Now); err != nil {
+				return project.Task{}, mapProjectWriteError("insert updated project task assignee", err)
+			}
+		}
+		if _, err = tx.Exec(ctx, `INSERT INTO audit_events (event_type,result,request_id,actor_user_id,subject_type,project_id,metadata,occurred_at) VALUES ('task.assignees_changed','success',$1,$2,'project_task',$3,jsonb_build_object('taskId',$4::text,'assigneeUserIds',$5::text[],'version',$6::bigint),$7)`, command.RequestID, command.UserID, command.ProjectID, command.TaskID, *command.AssigneeUserIDs, item.Version, command.Now); err != nil {
+			return project.Task{}, fmt.Errorf("audit project task assignee update: %w", err)
+		}
 	}
-	if err = enqueueScopedProjectNotification(ctx, tx, command.ProjectID, command.UserID, fmt.Sprintf("%s:%d", item.ID, item.Version), item.ID, "", notificationScopeTask, command.Notification, command.Now); err != nil {
-		return project.Task{}, err
+	if command.Status != "" {
+		if _, err = tx.Exec(ctx, `INSERT INTO audit_events (event_type,result,request_id,actor_user_id,subject_type,project_id,metadata,occurred_at) VALUES ('task.status_changed','success',$1,$2,'project_task',$3,jsonb_build_object('taskId',$4::text,'status',$5::text,'version',$6::bigint),$7)`, command.RequestID, command.UserID, command.ProjectID, command.TaskID, command.Status, item.Version, command.Now); err != nil {
+			return project.Task{}, fmt.Errorf("audit project task status update: %w", err)
+		}
+	}
+	if command.Status != "" {
+		if err = enqueueScopedProjectNotification(ctx, tx, command.ProjectID, command.UserID, fmt.Sprintf("%s:%d", item.ID, item.Version), item.ID, "", notificationScopeTask, command.Notification, command.Now); err != nil {
+			return project.Task{}, err
+		}
+	}
+	if command.AssigneeUserIDs != nil {
+		if err = enqueueTaskAssigneeNotification(ctx, tx, command.ProjectID, item.ID, fmt.Sprintf("%s:%d", item.ID, item.Version), command.UserID, command.AssignmentNotification, command.Now); err != nil {
+			return project.Task{}, err
+		}
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return project.Task{}, mapProjectWriteError("commit project task update", err)

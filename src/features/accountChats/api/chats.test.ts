@@ -24,7 +24,7 @@ describe("global chat API", () => {
   });
 
   it("sends CSRF and idempotency headers for mutations", async () => {
-    Object.defineProperty(document, "cookie", { configurable: true, value: "__Host-arhdesign_csrf=hello%20world" });
+    Object.defineProperty(document, "cookie", { configurable: true, value: "arhdesign_csrf=hello%20world" });
     vi.stubGlobal("crypto", { ...crypto, randomUUID: () => "request-id" });
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       void input; void init;

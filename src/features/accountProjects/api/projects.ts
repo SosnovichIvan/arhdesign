@@ -1,4 +1,4 @@
-import { readApiError } from "@/shared/lib";
+import { csrfToken, readApiError } from "@/shared/lib";
 
 import type { CreateProjectExpensePayload, CreateProjectMeetingPayload, CreateProjectPayload, CreateProjectTaskPayload, CurrentAccount, ProjectCalendarFeed, ProjectChatContext, ProjectChatContextType, ProjectChatList, ProjectChatMember, ProjectChatMemberList, ProjectChatMessage, ProjectChatPage, ProjectChatSummary, ProjectDocument, ProjectDocumentList, ProjectExpense, ProjectExpenseList, ProjectFinanceSummary, ProjectMaterial, ProjectMaterialInput, ProjectMaterialList, ProjectMember, ProjectMemberCandidateList, ProjectMemberList, ProjectPage, ProjectTask, ProjectTaskList, ProjectTaskStatus, ProjectUpcomingFeed, ProjectUpcomingItem, ProjectUserSettings, ProjectView, UpdateProjectPayload } from "../model/types";
 
@@ -7,7 +7,6 @@ export class ProjectApiError extends Error {
     super(message);
   }
 }
-
 export async function loadProjects(signal?: AbortSignal): Promise<ProjectPage> {
   const response = await fetch("/api/v1/projects?pageSize=50", { credentials: "same-origin", signal });
   if (!response.ok) throw new ProjectApiError(await readApiError(response, "Не удалось загрузить проекты"), response.status);
@@ -165,8 +164,14 @@ export async function loadProjectDocuments(projectId: string, signal?: AbortSign
   return response.json() as Promise<ProjectDocumentList>;
 }
 
+export async function loadProjectDocumentBlob(projectId: string, documentId: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`, { credentials: "same-origin", signal });
+  if (!response.ok) throw new ProjectApiError(await readApiError(response, "Не удалось загрузить файл для просмотра"), response.status);
+  return response.blob();
+}
+
 export async function uploadProjectDocument(projectId: string, file: File): Promise<ProjectDocument> {
-  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/documents`, { body: file, credentials: "same-origin", headers: { "Content-Type": file.type || "application/octet-stream", "X-CSRF-Token": csrfToken(), "X-File-Name": file.name }, method: "POST" });
+  const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/documents`, { body: file, credentials: "same-origin", headers: { "Content-Type": file.type || "application/octet-stream", "X-CSRF-Token": csrfToken(), "X-File-Name": `UTF-8''${encodeURIComponent(file.name)}` }, method: "POST" });
   if (!response.ok) throw new ProjectApiError(await readApiError(response, "Не удалось загрузить документ"), response.status);
   return response.json() as Promise<ProjectDocument>;
 }
@@ -272,11 +277,19 @@ export async function loadProjectTasks(projectId: string, signal?: AbortSignal):
 }
 
 export async function updateProjectTaskStatus(projectId: string, taskId: string, version: number, status: ProjectTaskStatus): Promise<ProjectTask> {
+	return updateProjectTask(projectId, taskId, version, { status }, "Не удалось изменить статус задачи");
+}
+
+export async function updateProjectTaskAssignees(projectId: string, taskId: string, version: number, assigneeUserIds: string[]): Promise<ProjectTask> {
+	return updateProjectTask(projectId, taskId, version, { assigneeUserIds }, "Не удалось изменить ответственного");
+}
+
+async function updateProjectTask(projectId: string, taskId: string, version: number, payload: { assigneeUserIds?: string[]; status?: ProjectTaskStatus }, fallback: string): Promise<ProjectTask> {
   const response = await fetch(`/api/v1/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}`, {
-    body: JSON.stringify({ status }), credentials: "same-origin",
+    body: JSON.stringify(payload), credentials: "same-origin",
     headers: { "Content-Type": "application/json", "If-Match": String(version), "X-CSRF-Token": csrfToken() }, method: "PATCH",
   });
-  if (!response.ok) throw new ProjectApiError(await readApiError(response, response.status === 409 ? "Задача уже изменена. Обновите список и повторите действие." : "Не удалось изменить статус задачи"), response.status);
+  if (!response.ok) throw new ProjectApiError(await readApiError(response, response.status === 409 ? "Задача уже изменена. Обновите список и повторите действие." : fallback), response.status);
   return response.json() as Promise<ProjectTask>;
 }
 
@@ -291,9 +304,4 @@ async function createUpcomingItem(projectId: string, resource: "tasks" | "meetin
   });
   if (!response.ok) throw new ProjectApiError(await readApiError(response, fallback), response.status);
   return response.json() as Promise<ProjectUpcomingItem>;
-}
-
-function csrfToken() {
-  const cookie = document.cookie.split("; ").find((value) => value.startsWith("arhdesign_csrf=") || value.startsWith("__Host-arhdesign_csrf="));
-  return cookie ? decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)) : "";
 }

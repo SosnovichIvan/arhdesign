@@ -1,11 +1,10 @@
-import { readApiError } from "@/shared/lib";
+import { csrfToken, readApiError } from "@/shared/lib";
 
 import type { AccountStatus, AdminUser, AdminUserPage } from "../model/types";
 
 export class AdminUsersApiError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }
-
 export async function loadAdminUsers(filters: { cursor?: string; identifier?: string; status?: AccountStatus }, signal?: AbortSignal): Promise<AdminUserPage> {
   const query = new URLSearchParams({ pageSize: "25" });
   if (filters.cursor) query.set("cursor", filters.cursor);
@@ -24,9 +23,4 @@ export async function changeAdminUserStatus(user: AdminUser, action: "disable" |
   });
   if (!response.ok) throw new AdminUsersApiError(await readApiError(response, action === "disable" ? "Не удалось отключить пользователя" : "Не удалось восстановить пользователя"), response.status);
   return response.json() as Promise<AdminUser>;
-}
-
-function csrfToken() {
-  const cookie = document.cookie.split("; ").find((value) => value.startsWith("arhdesign_csrf=") || value.startsWith("__Host-arhdesign_csrf="));
-  return cookie ? decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)) : "";
 }

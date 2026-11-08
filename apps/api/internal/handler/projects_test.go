@@ -62,6 +62,7 @@ type endpointProjectStore struct {
 	chatMember       project.ChatMember
 	documents        project.ProjectDocumentList
 	document         project.ProjectDocument
+	documentUpload   project.UploadProjectDocumentCommand
 	documentContent  project.ProjectDocumentContent
 	notifications    project.AccountNotificationList
 }
@@ -210,7 +211,8 @@ func (store *endpointProjectStore) MarkAllAccountNotificationsRead(context.Conte
 func (store *endpointProjectStore) ListProjectDocuments(context.Context, project.Actor, string) (project.ProjectDocumentList, error) {
 	return store.documents, store.err
 }
-func (store *endpointProjectStore) UploadProjectDocument(context.Context, project.UploadProjectDocumentCommand) (project.ProjectDocument, error) {
+func (store *endpointProjectStore) UploadProjectDocument(_ context.Context, command project.UploadProjectDocumentCommand) (project.ProjectDocument, error) {
+	store.documentUpload = command
 	return store.document, store.err
 }
 func (store *endpointProjectStore) DownloadProjectDocument(context.Context, project.Actor, string, string) (project.ProjectDocumentContent, error) {
@@ -479,7 +481,7 @@ func TestProjectCollaborationEndpointsMapServiceFailures(t *testing.T) {
 	from := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	to := from.AddDate(0, 1, 0)
 	materialBody := `{"category":"materials","name":"Керамогранит","supplierName":"Поставщик","contractAmountMinor":125050,"paymentStatus":"unpaid","deliveryStatus":"expected"}`
-	taskBody := `{"title":"Подготовить планы","dueAt":"2026-10-26T10:00:00Z"}`
+	taskBody := `{"title":"Подготовить планы","dueAt":"2026-10-26T10:00:00Z","assigneeUserIds":["` + endpointMemberID + `"]}`
 	meetingBody := `{"title":"Встреча на объекте","startsAt":"2026-10-26T10:00:00Z","endsAt":"2026-10-26T11:00:00Z"}`
 	chatBody := `{"body":"Проверьте чертежи","clientMessageId":"00000000-0000-0000-0000-000000000031"}`
 
@@ -1323,7 +1325,7 @@ func TestProjectUpcomingEndpointsCreateAndList(t *testing.T) {
 	}
 
 	task := httptest.NewRecorder()
-	endpoint.CreateProjectTask(task, authenticatedRequest(http.MethodPost, "/api/v1/projects/"+endpointProjectID+"/tasks", `{"title":"Подготовить планы","description":"Проверить планы","dueAt":"2026-09-26T10:00:00Z"}`), uuid.MustParse(endpointProjectID))
+	endpoint.CreateProjectTask(task, authenticatedRequest(http.MethodPost, "/api/v1/projects/"+endpointProjectID+"/tasks", `{"title":"Подготовить планы","description":"Проверить планы","dueAt":"2026-09-26T10:00:00Z","assigneeUserIds":["`+endpointMemberID+`"]}`), uuid.MustParse(endpointProjectID))
 	if task.Code != http.StatusCreated || store.task.Title != "Подготовить планы" || task.Header().Get("Location") == "" {
 		t.Fatalf("task status=%d body=%s command=%#v", task.Code, task.Body.String(), store.task)
 	}
@@ -1378,6 +1380,53 @@ func TestProjectTaskEndpointsListAndUpdateStatus(t *testing.T) {
 	endpoint.UpdateProjectTask(response, authenticatedRequest(http.MethodPatch, "/api/v1/projects/"+endpointProjectID+"/tasks/"+endpointMemberID, `{"status":"in_progress"}`), uuid.MustParse(endpointProjectID), uuid.MustParse(endpointMemberID), accountgenerated.UpdateProjectTaskParams{IfMatch: 1})
 	if response.Code != http.StatusOK || store.updateTask.Status != project.TaskInProgress || store.updateTask.ExpectedVersion != 1 {
 		t.Fatalf("update status=%d body=%s command=%#v", response.Code, response.Body.String(), store.updateTask)
+	}
+
+	store.updatedTask.Assignees = []project.TaskAssignee{{UserID: endpointMemberID, Login: "ivan", FirstName: "Иван"}}
+	store.updatedTask.Version = 3
+	response = httptest.NewRecorder()
+	endpoint.UpdateProjectTask(response, authenticatedRequest(http.MethodPatch, "/api/v1/projects/"+endpointProjectID+"/tasks/"+endpointMemberID, `{"assigneeUserIds":["`+endpointMemberID+`"]}`), uuid.MustParse(endpointProjectID), uuid.MustParse(endpointMemberID), accountgenerated.UpdateProjectTaskParams{IfMatch: 2})
+	if response.Code != http.StatusOK || store.updateTask.AssigneeUserIDs == nil || len(*store.updateTask.AssigneeUserIDs) != 1 || (*store.updateTask.AssigneeUserIDs)[0] != endpointMemberID || store.updateTask.ExpectedVersion != 2 {
+		t.Fatalf("update assignee status=%d body=%s command=%#v", response.Code, response.Body.String(), store.updateTask)
+	}
+}
+
+func TestProjectDocumentResponseIncludesContextChat(t *testing.T) {
+	chatID := "00000000-0000-0000-0000-000000000030"
+	response := projectDocumentResponse(project.ProjectDocument{
+		ID: "00000000-0000-0000-0000-000000000040", ProjectID: endpointProjectID,
+		Name: "plan.pdf", MediaType: "application/pdf", UploadedByUserID: endpointActorID,
+		ContextChatID: &chatID,
+	})
+	if response.ContextChatId == nil || response.ContextChatId.String() != chatID {
+		t.Fatalf("context chat id=%v", response.ContextChatId)
+	}
+}
+
+func TestUploadProjectDocumentDecodesUTF8FileName(t *testing.T) {
+	store := &endpointProjectStore{document: project.ProjectDocument{ID: "00000000-0000-0000-0000-000000000040", ProjectID: endpointProjectID, Name: "План кухни.pdf", MediaType: "application/pdf", UploadedByUserID: endpointActorID}}
+	endpoint := projectEndpointForTest(t, activeAccount(nil), store)
+	request := authenticatedRequest(http.MethodPost, "/documents", "pdf")
+	request.Header.Set("Content-Type", "application/pdf")
+	response := httptest.NewRecorder()
+
+	endpoint.UploadProjectDocument(response, request, uuid.MustParse(endpointProjectID), accountgenerated.UploadProjectDocumentParams{XFileName: "UTF-8''%D0%9F%D0%BB%D0%B0%D0%BD%20%D0%BA%D1%83%D1%85%D0%BD%D0%B8.pdf"})
+
+	if response.Code != http.StatusCreated || store.documentUpload.Name != "План кухни.pdf" {
+		t.Fatalf("status=%d body=%s name=%q", response.Code, response.Body.String(), store.documentUpload.Name)
+	}
+}
+
+func TestUploadProjectDocumentRejectsInvalidEncodedFileName(t *testing.T) {
+	store := &endpointProjectStore{}
+	endpoint := projectEndpointForTest(t, activeAccount(nil), store)
+	request := authenticatedRequest(http.MethodPost, "/documents", "pdf")
+	response := httptest.NewRecorder()
+
+	endpoint.UploadProjectDocument(response, request, uuid.MustParse(endpointProjectID), accountgenerated.UploadProjectDocumentParams{XFileName: "UTF-8''%ZZ.pdf"})
+
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "Некорректное имя файла") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 

@@ -20,6 +20,9 @@ function feed(items: unknown[] = [], days = 7) {
   return { days, items, rangeEnd: "2026-10-02T12:00:00Z", rangeStart: "2026-09-25T12:00:00Z" };
 }
 
+const member = { email: "anna@example.com", firstName: "Анна", joinedAt: "2026-09-24T10:00:00Z", lastName: "Иванова", login: "anna", middleName: null, professionalRole: { code: "designer", name: "Дизайнер" }, projectRoles: ["executor"], removable: true, userId: "user-2" };
+function members() { return { canManage: true, items: [member] }; }
+
 describe("ProjectUpcoming", () => {
   it("loads items, filters them and hides creation actions without permission", async () => {
     const items = [
@@ -130,6 +133,7 @@ describe("ProjectUpcoming", () => {
     const fetchMock = vi.fn((input: string | URL | Request, init?: RequestInit) => {
       if (init?.method === "POST") { items = [created]; return Promise.resolve(response(created, 201)); }
       if (String(input).endsWith("/settings")) return Promise.resolve(response({ upcomingDays: 7 }));
+      if (String(input).endsWith("/members")) return Promise.resolve(response(members()));
       return Promise.resolve(response(feed(items)));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -138,6 +142,8 @@ describe("ProjectUpcoming", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Создать задачу" }));
     const taskDialog = screen.getByRole("dialog", { name: "Создание задачи" });
+    fireEvent.click(await within(taskDialog).findByRole("combobox", { name: "Ответственный" }));
+    fireEvent.click(screen.getByRole("option", { name: /Анна Иванова/ }));
     fireEvent.change(screen.getByLabelText("Название *"), { target: { value: " Проверить чертежи " } });
     fireEvent.change(screen.getByLabelText("Описание"), { target: { value: "Проверить план" } });
     fireEvent.click(screen.getByRole("combobox", { name: "Дедлайн, дата" }));
@@ -153,13 +159,27 @@ describe("ProjectUpcoming", () => {
     expect(JSON.parse(String(post?.[1]?.body))).toMatchObject({ description: "Проверить план", title: "Проверить чертежи" });
   });
 
+  it("explains when project participants cannot be loaded", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      if (String(input).endsWith("/settings")) return Promise.resolve(response({ upcomingDays: 7 }));
+      if (String(input).endsWith("/members")) return Promise.reject(new Error("Участники недоступны"));
+      return Promise.resolve(response(feed()));
+    }));
+    render(<ProjectUpcoming canCreate projectId="project-members-error" />);
+    await screen.findByText("Ближайших событий пока нет");
+    fireEvent.click(screen.getByRole("button", { name: "Создать задачу" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Участники недоступны");
+  });
+
   it("explains an already elapsed task deadline next to the date and time fields", async () => {
-    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => Promise.resolve(response(String(input).endsWith("/settings") ? { upcomingDays: 7 } : feed()))));
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => Promise.resolve(response(String(input).endsWith("/settings") ? { upcomingDays: 7 } : String(input).endsWith("/members") ? members() : feed()))));
     render(<ProjectUpcoming canCreate projectId="project-deadline" />);
     await screen.findByText("Ближайших событий пока нет");
 
     fireEvent.click(screen.getByRole("button", { name: "Создать задачу" }));
     const dialog = screen.getByRole("dialog", { name: "Создание задачи" });
+    fireEvent.click(await within(dialog).findByRole("combobox", { name: "Ответственный" }));
+    fireEvent.click(screen.getByRole("option", { name: /Анна Иванова/ }));
     fireEvent.change(within(dialog).getByLabelText("Название *"), { target: { value: "Проверить планы" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Создать задачу" }));
     expect((await within(dialog).findByRole("alert")).textContent).toBe("Выберите дату дедлайна");
@@ -211,6 +231,7 @@ describe("ProjectUpcoming", () => {
       if (init?.method === "POST" && String(input).endsWith("/tasks")) return Promise.resolve(response({ error: { message: "Задачу не удалось сохранить" } }, 503));
       if (init?.method === "POST" && String(input).endsWith("/meetings")) return Promise.resolve(response({ id: "meeting-1" }, 201));
       if (String(input).endsWith("/settings")) return Promise.resolve(response({ upcomingDays: 7 }));
+      if (String(input).endsWith("/members")) return Promise.resolve(response(members()));
       return Promise.resolve(response(feed()));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -219,6 +240,8 @@ describe("ProjectUpcoming", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Создать задачу" }));
     let dialog = screen.getByRole("dialog", { name: "Создание задачи" });
+    fireEvent.click(await within(dialog).findByRole("combobox", { name: "Ответственный" }));
+    fireEvent.click(screen.getByRole("option", { name: /Анна Иванова/ }));
     fireEvent.change(within(dialog).getByLabelText("Название *"), { target: { value: "Задача" } });
     fireEvent.click(within(dialog).getByRole("combobox", { name: "Дедлайн, дата" }));
     fireEvent.click(within(dialog).getByRole("button", { name: formatLongDate(tomorrow) }));
@@ -239,11 +262,13 @@ describe("ProjectUpcoming", () => {
 
   it("validates missing times and requires meeting end after its start", async () => {
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(12, 0, 0, 0);
-    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => Promise.resolve(response(String(input).endsWith("/settings") ? { upcomingDays: 7 } : feed()))));
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => Promise.resolve(response(String(input).endsWith("/settings") ? { upcomingDays: 7 } : String(input).endsWith("/members") ? members() : feed()))));
     render(<ProjectUpcoming canCreate projectId="project-validation" />);
     await screen.findByText("Ближайших событий пока нет");
     fireEvent.click(screen.getByRole("button", { name: "Создать задачу" }));
     let dialog = screen.getByRole("dialog", { name: "Создание задачи" });
+    fireEvent.click(await within(dialog).findByRole("combobox", { name: "Ответственный" }));
+    fireEvent.click(screen.getByRole("option", { name: /Анна Иванова/ }));
     fireEvent.change(within(dialog).getByLabelText("Название *"), { target: { value: "Задача" } });
     fireEvent.click(within(dialog).getByRole("combobox", { name: "Дедлайн, дата" }));
     fireEvent.click(within(dialog).getByRole("button", { name: formatLongDate(tomorrow) }));

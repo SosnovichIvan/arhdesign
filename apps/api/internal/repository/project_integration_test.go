@@ -324,7 +324,7 @@ func TestProjectUpcomingTasksAndMeetingsRespectScopeAndRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := service.CreateTask(context.Background(), actor, created.ID, project.CreateTaskRequest{Title: "Подготовить планы", Description: "Первый этаж", DueAt: now.Add(24 * time.Hour), RequestID: "request-upcoming-task"})
+	task, err := service.CreateTask(context.Background(), actor, created.ID, project.CreateTaskRequest{Title: "Подготовить планы", Description: "Первый этаж", AssigneeUserIDs: []string{owner}, DueAt: now.Add(24 * time.Hour), RequestID: "request-upcoming-task"})
 	if err != nil || task.Kind != project.UpcomingTask || task.Status == nil || *task.Status != "new" {
 		t.Fatalf("task=%#v error=%v", task, err)
 	}
@@ -383,8 +383,28 @@ func TestProjectUpcomingTasksAndMeetingsRespectScopeAndRange(t *testing.T) {
 	if _, err = service.ListUpcoming(context.Background(), foreignActor, created.ID, 7); !errors.Is(err, project.ErrNotFound) {
 		t.Fatalf("foreign list error=%v", err)
 	}
-	if _, err = service.CreateTask(context.Background(), foreignActor, created.ID, project.CreateTaskRequest{Title: "Чужая задача", DueAt: now.Add(time.Hour), RequestID: "request-foreign-task"}); !errors.Is(err, project.ErrNotFound) {
+	if _, err = service.CreateTask(context.Background(), foreignActor, created.ID, project.CreateTaskRequest{Title: "Чужая задача", AssigneeUserIDs: []string{foreign}, DueAt: now.Add(time.Hour), RequestID: "request-foreign-task"}); !errors.Is(err, project.ErrNotFound) {
 		t.Fatalf("foreign task error=%v", err)
+	}
+	reassignedToOwner := []string{owner}
+	if _, err = service.UpdateTask(context.Background(), executorActor, created.ID, assignedTask.ID, project.UpdateTaskRequest{AssigneeUserIDs: &reassignedToOwner, ExpectedVersion: updatedTask.Version, RequestID: "request-executor-reassign"}); !errors.Is(err, project.ErrForbidden) {
+		t.Fatalf("executor reassignment error=%v", err)
+	}
+	reassignedToForeign := []string{foreign}
+	if _, err = service.UpdateTask(context.Background(), actor, created.ID, assignedTask.ID, project.UpdateTaskRequest{AssigneeUserIDs: &reassignedToForeign, ExpectedVersion: updatedTask.Version, RequestID: "request-nonmember-reassign"}); !errors.Is(err, project.ErrAccountUnavailable) {
+		t.Fatalf("nonmember reassignment error=%v", err)
+	}
+	reassignedTask, err := service.UpdateTask(context.Background(), actor, created.ID, assignedTask.ID, project.UpdateTaskRequest{AssigneeUserIDs: &reassignedToOwner, ExpectedVersion: updatedTask.Version, RequestID: "request-reassign-task"})
+	if err != nil || len(reassignedTask.Assignees) != 1 || reassignedTask.Assignees[0].UserID != owner {
+		t.Fatalf("reassigned task=%#v error=%v", reassignedTask, err)
+	}
+	executorTasks, err = service.ListTasks(context.Background(), executorActor, created.ID)
+	if err != nil || len(executorTasks.Items) != 0 {
+		t.Fatalf("executor tasks after reassignment=%#v error=%v", executorTasks, err)
+	}
+	var assigneeAuditCount int
+	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE project_id=$1 AND event_type='task.assignees_changed'`, created.ID).Scan(&assigneeAuditCount); err != nil || assigneeAuditCount != 1 {
+		t.Fatalf("assignee audit count=%d error=%v", assigneeAuditCount, err)
 	}
 	var auditCount int
 	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE project_id=$1 AND event_type IN ('task.created','task.status_changed','meeting.created')`, created.ID).Scan(&auditCount); err != nil || auditCount != 4 {
@@ -504,6 +524,10 @@ func TestProjectContextChatsRespectEntityAccessAndStayUniqueIntegration(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	document, err := service.UploadDocument(context.Background(), ownerActor, created.ID, "План.pdf", "application/pdf", "request-context-document", bytes.NewReader([]byte("pdf")), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	opened, err := service.OpenContextChat(context.Background(), ownerActor, created.ID, project.OpenContextChatRequest{ContextType: "task", ContextID: task.ID, Name: "Обсуждение чертежей", RequestID: "request-open-task-chat"})
 	if err != nil || opened.ContextTitle != "Рабочие чертежи" {
@@ -562,6 +586,14 @@ func TestProjectContextChatsRespectEntityAccessAndStayUniqueIntegration(t *testi
 	if err != nil || materialChat.ContextTitle != "Диван" {
 		t.Fatalf("material chat=%#v err=%v", materialChat, err)
 	}
+	documentChat, err := service.OpenContextChat(context.Background(), executorActor, created.ID, project.OpenContextChatRequest{ContextType: "document", ContextID: document.ID, Name: "Обсуждение плана", RequestID: "request-open-document"})
+	if err != nil || documentChat.ContextTitle != "План.pdf" {
+		t.Fatalf("document chat=%#v err=%v", documentChat, err)
+	}
+	documents, err := service.ListDocuments(context.Background(), ownerActor, created.ID)
+	if err != nil || len(documents.Items) != 1 || documents.Items[0].ContextChatID == nil || *documents.Items[0].ContextChatID != documentChat.ChatID {
+		t.Fatalf("documents=%#v err=%v", documents, err)
+	}
 
 	results := make(chan project.ChatContext, 2)
 	errorsChannel := make(chan error, 2)
@@ -603,14 +635,17 @@ func TestProjectContextChatsRespectEntityAccessAndStayUniqueIntegration(t *testi
 		t.Fatalf("revoked list err=%v", err)
 	}
 
-	var taskChats, expenseChats, contextAudits int
+	var taskChats, expenseChats, documentChats, contextAudits int
 	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM chats WHERE project_id=$1 AND kind='context' AND context_type='task' AND context_id=$2`, created.ID, task.ID).Scan(&taskChats); err != nil || taskChats != 1 {
 		t.Fatalf("task chats=%d err=%v", taskChats, err)
 	}
 	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM chats WHERE project_id=$1 AND kind='context' AND context_type='expense' AND context_id=$2`, created.ID, expense.ID).Scan(&expenseChats); err != nil || expenseChats != 1 {
 		t.Fatalf("expense chats=%d err=%v", expenseChats, err)
 	}
-	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE project_id=$1 AND event_type='chat.context_created'`, created.ID).Scan(&contextAudits); err != nil || contextAudits != 3 {
+	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM chats WHERE project_id=$1 AND kind='context' AND context_type='document' AND context_id=$2`, created.ID, document.ID).Scan(&documentChats); err != nil || documentChats != 1 {
+		t.Fatalf("document chats=%d err=%v", documentChats, err)
+	}
+	if err = pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE project_id=$1 AND event_type='chat.context_created'`, created.ID).Scan(&contextAudits); err != nil || contextAudits != 4 {
 		t.Fatalf("context audits=%d err=%v", contextAudits, err)
 	}
 }

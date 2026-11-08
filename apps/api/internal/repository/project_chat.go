@@ -305,6 +305,13 @@ func contextEntityTitle(ctx context.Context, querier projectAccessQuerier, actor
 		if err := querier.QueryRow(ctx, `SELECT description FROM project_expense_requests WHERE project_id=$1 AND id=$2`, projectID, contextID).Scan(&title); err != nil {
 			return "", mapContextEntityReadError("expense", err)
 		}
+	case "document":
+		if err := requireProjectAccess(ctx, querier, actor, projectID, false); err != nil {
+			return "", err
+		}
+		if err := querier.QueryRow(ctx, `SELECT name FROM project_documents WHERE project_id=$1 AND id=$2 AND deleted_at IS NULL`, projectID, contextID).Scan(&title); err != nil {
+			return "", mapContextEntityReadError("document", err)
+		}
 	default:
 		return "", project.ErrNotFound
 	}

@@ -210,15 +210,17 @@ describe("Личный кабинет — проекты", () => {
     cy.get('[aria-label="Создать задачу"]').click();
     cy.get('[data-cy="create-task-form"] input').first().type("Проверить чертежи");
     cy.get('[data-cy="create-task-form"] textarea').type("Проверить план");
+    cy.get('[data-cy="create-task-form"] [role="combobox"]').first().click();
+    cy.contains('[role="option"]', "Светлана Полисмакова").click();
     cy.get('[data-cy="create-task-form"] button[type="submit"]').click();
     cy.get('[data-cy="create-task-form"] [role="alert"]').should("contain.text", "Выберите дату дедлайна");
-    cy.get('[data-cy="create-task-form"] [role="combobox"]').click();
+    cy.get('[data-cy="create-task-form"] [role="combobox"]').eq(1).click();
     cy.get('[data-cy="create-task-form"] [role="dialog"]').should("be.visible").and("have.css", "width", "320px");
     cy.get(`button[aria-label="${formatLongDate(new Date())}"]`).click();
     cy.get('[data-cy="create-task-form"] input[type="time"]').clear().type("00:00");
     cy.get('[data-cy="create-task-form"] button[type="submit"]').click();
     cy.get('[data-cy="create-task-form"] [role="alert"]').should("contain.text", "Выбранный дедлайн уже прошёл");
-    cy.get('[data-cy="create-task-form"] [role="combobox"]').click();
+    cy.get('[data-cy="create-task-form"] [role="combobox"]').eq(1).click();
     cy.get(`button[aria-label="${formatLongDate(tomorrow)}"]`).click();
     cy.get('[data-cy="create-task-form"] input[type="time"]').clear().type("12:00");
     cy.get('[data-cy="create-task-form"] button[type="submit"]').click();
@@ -264,6 +266,8 @@ describe("Личный кабинет — проекты", () => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(12, 0, 0, 0);
+    const secondMember = { ...customerMember, firstName: "Иван", lastName: "Петров", login: "ivan.architect", userId: "00000000-0000-0000-0000-000000000002" };
+    cy.intercept("GET", `/api/v1/projects/${project.id}/members`, { statusCode: 200, body: { canManage: true, items: [customerMember, secondMember] } });
     const tasks = [{
       assignees: [{ firstName: customerMember.firstName, lastName: customerMember.lastName, login: customerMember.login, userId: customerMember.userId }],
       canChangeStatus: true,
@@ -288,10 +292,16 @@ describe("Личный кабинет — проекты", () => {
       request.reply({ statusCode: 201, body: { createdAt: new Date().toISOString(), description: null, effectiveAt: request.body.dueAt, endsAt: null, id: "task-2", kind: "task", location: null, projectId: project.id, status: "new", title: request.body.title, version: 1 } });
     }).as("createProjectTask");
     cy.intercept("PATCH", `/api/v1/projects/${project.id}/tasks/task-1`, (request) => {
-      expect(request.headers).to.have.property("if-match", "1");
       expect(request.headers).to.have.property("x-csrf-token", "test-csrf");
-      expect(request.body).to.deep.equal({ status: "in_progress" });
-      tasks[0] = { ...tasks[0], startedAt: new Date().toISOString(), status: "in_progress", version: 2 };
+      if (request.body.status) {
+        expect(request.headers).to.have.property("if-match", "1");
+        expect(request.body).to.deep.equal({ status: "in_progress" });
+        tasks[0] = { ...tasks[0], startedAt: new Date().toISOString(), status: "in_progress", version: 2 };
+      } else {
+        expect(request.headers).to.have.property("if-match", "2");
+        expect(request.body).to.deep.equal({ assigneeUserIds: [secondMember.userId] });
+        tasks[0] = { ...tasks[0], assignees: [{ firstName: secondMember.firstName, lastName: secondMember.lastName, login: secondMember.login, userId: secondMember.userId }], version: 3 };
+      }
       request.reply({ statusCode: 200, body: tasks[0] });
     }).as("updateProjectTask");
 
@@ -328,6 +338,16 @@ describe("Личный кабинет — проекты", () => {
     cy.contains('[role="option"]', "В работе").click();
     cy.wait("@updateProjectTask");
     cy.get('[data-cy="project-task-task-1"]').should("contain.text", "В работе").and("contain.text", "Старт:");
+    cy.get('[data-cy="task-filter-settings"]').click();
+    cy.get('[data-cy="reset-task-filters"]').click();
+    cy.get('[data-cy="apply-task-filters"]').click();
+    cy.get('[data-cy="edit-task-assignee-task-1"]').click();
+    cy.get('[data-cy="task-assignee-form"] [role="combobox"]').click();
+    cy.contains('[role="option"]', "Иван Петров").click();
+    cy.get('[data-cy="task-assignee-form"]').contains("button", "Сохранить").click();
+    cy.wait("@updateProjectTask");
+    cy.get('[data-cy="project-task-task-1"]').should("contain.text", "Иван Петров");
+    cy.get('[data-cy="project-tasks-page"] [role="status"]').should("contain.text", "Ответственный изменён");
   });
 
   it("показывает задачи и встречи в календаре проекта", () => {
@@ -702,14 +722,16 @@ describe("Личный кабинет — проекты", () => {
     cy.get('[data-cy="chat-message-shared-message-2"]').should("contain.text", "Иван Петров").and("not.contain.text", "Вы");
   });
 
-  it("создаёт и открывает чаты из задачи, материала и расхода", () => {
+  it("создаёт и открывает чаты из задачи, материала, расхода и документа", () => {
     cy.setCookie("arhdesign_csrf", "test-csrf");
     const taskId = "00000000-0000-0000-0000-000000000081";
     const materialId = "00000000-0000-0000-0000-000000000082";
     const expenseId = "00000000-0000-0000-0000-000000000083";
+    const documentId = "00000000-0000-0000-0000-000000000084";
     const taskChatId = "00000000-0000-0000-0000-000000000091";
     const materialChatId = "00000000-0000-0000-0000-000000000092";
     const expenseChatId = "00000000-0000-0000-0000-000000000093";
+    const documentChatId = "00000000-0000-0000-0000-000000000094";
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(12, 0, 0, 0);
@@ -731,6 +753,7 @@ describe("Личный кабинет — проекты", () => {
       [taskChatId]: { chatId: taskChatId, contextId: taskId, contextTitle: "Рабочие чертежи", contextType: "task", name: "Чертежи кухни", projectId: project.id },
       [materialChatId]: { chatId: materialChatId, contextId: materialId, contextTitle: "Диван", contextType: "material", name: "Обсуждение дивана", projectId: project.id },
       [expenseChatId]: { chatId: expenseChatId, contextId: expenseId, contextTitle: "Светильники", contextType: "expense", name: "Оплата светильников", projectId: project.id },
+      [documentChatId]: { chatId: documentChatId, contextId: documentId, contextTitle: "План.pdf", contextType: "document", name: "Обсуждение плана", projectId: project.id },
     };
     cy.intercept("GET", `/api/v1/projects/${project.id}/chats`, {
       statusCode: 200,
@@ -789,6 +812,24 @@ describe("Личный кабинет — проекты", () => {
     cy.location("pathname").should("eq", `/account/projects/${project.id}/chat/${expenseChatId}`);
     cy.wait("@contextChat");
     cy.get('[data-cy="project-chat-page"]').should("contain.text", "Оплата светильников");
+
+    cy.intercept("GET", `/api/v1/projects/${project.id}/documents`, {
+      statusCode: 200,
+      body: { canUpload: true, items: [{ canDelete: true, contextChatId: null, createdAt: new Date().toISOString(), id: documentId, mediaType: "application/pdf", name: "План.pdf", projectId: project.id, sizeBytes: 1024, uploadedByUserId: project.createdByUserId, version: 1 }] },
+    }).as("contextDocuments");
+    cy.intercept("PUT", `/api/v1/projects/${project.id}/chats/context`, (request) => {
+      expect(request.body).to.deep.equal({ contextId: documentId, contextType: "document", name: "Обсуждение плана" });
+      request.reply({ statusCode: 200, body: contexts[documentChatId] });
+    }).as("openDocumentChat");
+    cy.visit(`/account/projects/${project.id}/documents`);
+    cy.wait("@contextDocuments");
+    cy.get(`[data-cy="discuss-document-${documentId}"]`).click();
+    cy.get('[data-cy="context-chat-name"]').clear().type("Обсуждение плана");
+    cy.get('[data-cy="create-context-chat"]').click();
+    cy.wait("@openDocumentChat");
+    cy.location("pathname").should("eq", `/account/projects/${project.id}/chat/${documentChatId}`);
+    cy.wait("@contextChat");
+    cy.get('[data-cy="project-chat-page"]').should("contain.text", "Обсуждение плана").and("contain.text", "План.pdf");
   });
 
   it("показывает понятную ошибку загрузки и повторяет запрос", () => {
