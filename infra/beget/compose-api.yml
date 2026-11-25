@@ -32,9 +32,9 @@ services:
       TELEGRAM_PROXY_SSH_PORT: ${TELEGRAM_PROXY_SSH_PORT:-22}
       TELEGRAM_PROXY_SSH_USER: ${TELEGRAM_PROXY_SSH_USER:?TELEGRAM_PROXY_SSH_USER is required}
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 19840"]
+      test: ["CMD", "/usr/local/bin/telegram-proxy-check"]
       interval: 10s
-      timeout: 3s
+      timeout: 8s
       retries: 6
     restart: unless-stopped
     secrets:

@@ -1,10 +1,13 @@
 package notification
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -125,6 +128,44 @@ func TestTelegramPollerStopsWhenFetchFailsAndContextIsCancelled(t *testing.T) {
 	poller.Run(ctx)
 	if calls != 2 {
 		t.Fatalf("calls=%d, want 2", calls)
+	}
+}
+
+func TestTelegramPollerLogsSafeFailureDetails(t *testing.T) {
+	const token = "test-secret-token"
+	for _, scenario := range []struct {
+		name       string
+		statusCode int
+		want       string
+	}{
+		{name: "auth", statusCode: http.StatusUnauthorized, want: "Telegram returned HTTP 401"},
+		{name: "conflict", statusCode: http.StatusConflict, want: "Telegram returned HTTP 409"},
+		{name: "transport", want: "Telegram transport unavailable"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			client := pollingHTTPClientFunc(func(request *http.Request) (*http.Response, error) {
+				if scenario.statusCode == http.StatusConflict && strings.HasSuffix(request.URL.Path, "/deleteWebhook") {
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"ok":true}`))}, nil
+				}
+				cancel()
+				if scenario.statusCode == 0 {
+					return nil, &url.Error{Op: "Post", URL: request.URL.String(), Err: errors.New("offline")}
+				}
+				return &http.Response{StatusCode: scenario.statusCode, Body: io.NopCloser(strings.NewReader(token))}, nil
+			})
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logs, nil))
+			poller, err := NewTelegramPoller(token, client, &pollingProcessor{}, logger)
+			if err != nil {
+				t.Fatal(err)
+			}
+			poller.Run(ctx)
+			if output := logs.String(); !strings.Contains(output, scenario.want) || strings.Contains(output, token) {
+				t.Fatalf("unexpected polling log: %q", output)
+			}
+		})
 	}
 }
 
