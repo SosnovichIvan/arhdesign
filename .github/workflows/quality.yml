@@ -111,7 +111,7 @@ jobs:
         working-directory: .
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.10"
+          go-version: "1.26.11"
           cache-dependency-path: apps/api/go.sum
       - run: bash ../../scripts/validate-adapters.sh api
       - run: go test -race -count=1 ./...
