@@ -48,8 +48,30 @@ class RenderEnvironmentTest(unittest.TestCase):
             values = render_env.values("sha", "1.2.3")
         self.assertEqual(values["TELEGRAM_UPDATE_MODE"], "polling")
         self.assertEqual(values["TELEGRAM_PROXY_URL"], "http://telegram-proxy:19840")
+        self.assertEqual(values["TELEGRAM_PROXY_SSH_HOST"], "89.126.250.245")
+        self.assertEqual(values["TELEGRAM_PROXY_REMOTE_HOST"], "10.66.66.1")
         self.assertEqual(values["POSTGRES_SHARED_BUFFERS"], "768MB")
         self.assertEqual(values["OFFSITE_BACKUP_ENABLED"], "false")
+
+    def test_accepts_a_replacement_proxy_route(self) -> None:
+        route = {
+            "TELEGRAM_PROXY_SSH_HOST": "proxy.example.test",
+            "TELEGRAM_PROXY_SSH_PORT": "2222",
+            "TELEGRAM_PROXY_SSH_USER": "tunnel",
+            "TELEGRAM_PROXY_REMOTE_HOST": "127.0.0.1",
+            "TELEGRAM_PROXY_REMOTE_PORT": "33128",
+        }
+        with patch.dict(os.environ, BASE_ENV | route, clear=True):
+            values = render_env.values("sha", "1.2.3")
+        self.assertEqual({key: values[key] for key in route}, route)
+        self.assertEqual(values["TELEGRAM_PROXY_URL"], "http://telegram-proxy:19840")
+
+    def test_accepts_a_managed_http_proxy(self) -> None:
+        proxy_url = "http://proxy.example.test:50101"
+        with patch.dict(os.environ, BASE_ENV | {"TELEGRAM_PROXY_URL": proxy_url}, clear=True):
+            values = render_env.values("sha", "1.2.3")
+        self.assertEqual(values["TELEGRAM_PROXY_URL"], proxy_url)
+        self.assertEqual(values["TELEGRAM_UPDATE_MODE"], "polling")
 
     def test_rejects_multiline_secret(self) -> None:
         invalid = dict(BASE_ENV, SMTP_PASSWORD="first\nsecond")

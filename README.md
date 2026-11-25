@@ -357,6 +357,11 @@ workflow не используется. PostgreSQL, API, frontend, backup и Tel
 
 Production использует long polling и закрытый SSH local-forward до Squid по схеме plannerBot. Контейнер `telegram-proxy` не публикует порт на хост и доступен только API внутри Docker network. Все методы Bot API используют один proxy-aware HTTP client без прямого fallback. Private key и `known_hosts` размещаются на production-ВМ в `/etc/arhdesign/telegram-proxy` и не попадают в GitHub secrets, `.env` или образ.
 
+Docker проверяет доступ к Telegram по HTTPS через туннель. После запуска
+релиз отдельно проверяет токен бота методом `getMe`. Для замены SSH-узла
+используйте GitHub Actions Variables и обновите `known_hosts` на ВМ.
+[Команды проверки и порядок переключения](docs/operations/telegram-account-auth-runbook.md#замена-ssh-узла).
+
 После аварийной миграции production размещается на одной ВМ Yandex Cloud.
 Подробная конфигурация, стоимость, backup, cutover и путь разделения на узлы:
 [`docs/architecture/yandex-cloud-migration.md`](docs/architecture/yandex-cloud-migration.md).
