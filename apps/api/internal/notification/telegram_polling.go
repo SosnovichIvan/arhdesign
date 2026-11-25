@@ -66,7 +66,7 @@ func (poller *TelegramPoller) Run(ctx context.Context) {
 			err := poller.deleteWebhook(requestContext)
 			cancel()
 			if err != nil {
-				poller.logger.Warn("Telegram polling setup failed", "error_class", "telegram_proxy")
+				poller.logger.Warn("Telegram polling setup failed", "error_class", "telegram_proxy", "error", err)
 				if !waitTelegramRetry(ctx, backoff) {
 					return
 				}
@@ -79,7 +79,7 @@ func (poller *TelegramPoller) Run(ctx context.Context) {
 
 		updates, err := poller.fetch(ctx, offset)
 		if err != nil {
-			poller.logger.Warn("Telegram polling request failed", "error_class", "telegram_proxy")
+			poller.logger.Warn("Telegram polling request failed", "error_class", "telegram_proxy", "error", err)
 			if !waitTelegramRetry(ctx, backoff) {
 				return
 			}
@@ -116,11 +116,11 @@ func (poller *TelegramPoller) fetch(ctx context.Context, offset int64) ([]Telegr
 func (poller *TelegramPoller) call(ctx context.Context, method string, payload any, target any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("encode Telegram request: %w", err)
+		return fmt.Errorf("could not encode Telegram request")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, poller.endpoint+method, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create Telegram request: %w", err)
+		return fmt.Errorf("could not create Telegram request")
 	}
 	request.Header.Set("Content-Type", "application/json")
 	response, err := poller.client.Do(request)
@@ -130,7 +130,7 @@ func (poller *TelegramPoller) call(ctx context.Context, method string, payload a
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		_, _ = io.Copy(io.Discard, response.Body)
-		return fmt.Errorf("Telegram returned a non-success response")
+		return fmt.Errorf("Telegram returned HTTP %d", response.StatusCode)
 	}
 	var envelope struct {
 		OK     bool            `json:"ok"`

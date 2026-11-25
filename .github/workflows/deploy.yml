@@ -37,6 +37,12 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_BOT_USERNAME: ${{ secrets.TELEGRAM_BOT_USERNAME }}
       TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+      TELEGRAM_PROXY_URL: ${{ vars.TELEGRAM_PROXY_URL }}
+      TELEGRAM_PROXY_SSH_HOST: ${{ vars.TELEGRAM_PROXY_SSH_HOST }}
+      TELEGRAM_PROXY_SSH_PORT: ${{ vars.TELEGRAM_PROXY_SSH_PORT }}
+      TELEGRAM_PROXY_SSH_USER: ${{ vars.TELEGRAM_PROXY_SSH_USER }}
+      TELEGRAM_PROXY_REMOTE_HOST: ${{ vars.TELEGRAM_PROXY_REMOTE_HOST }}
+      TELEGRAM_PROXY_REMOTE_PORT: ${{ vars.TELEGRAM_PROXY_REMOTE_PORT }}
       YANDEX_HOST: ${{ secrets.YANDEX_HOST }}
       YANDEX_SSH_PORT: ${{ secrets.YANDEX_SSH_PORT }}
       YANDEX_SSH_USER: ${{ secrets.YANDEX_SSH_USER }}
@@ -106,18 +112,21 @@ jobs:
           scp release-files.tar.gz release-images.tar.gz production.env arh-production:/tmp/
           ssh arh-production 'sh -se' <<'REMOTE'
           set -eu
-          test -s /etc/arhdesign/telegram-proxy/id_ed25519
-          test -s /etc/arhdesign/telegram-proxy/known_hosts
+          if grep -Fqx 'TELEGRAM_PROXY_URL="http://telegram-proxy:19840"' /tmp/production.env; then
+            export COMPOSE_PROFILES=telegram-proxy
+            test -s /etc/arhdesign/telegram-proxy/id_ed25519
+            test -s /etc/arhdesign/telegram-proxy/known_hosts
+          fi
           tar -xzf /tmp/release-files.tar.gz -C /opt/arhdesign
           sudo install -o root -g arhdesign -m 0640 /tmp/production.env /etc/arhdesign/production.env
           docker load -i /tmp/release-images.tar.gz
           cd /opt/arhdesign
           if docker ps --format '{{.Names}}' | grep -q '^arhdesign-postgres-1$'; then
-            docker compose --project-name arhdesign --profile telegram-proxy \
+            docker compose --project-name arhdesign \
               --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml \
               run --rm -e BACKUP_RUN_ONCE=true postgres-backup
           fi
-          docker compose --project-name arhdesign --profile telegram-proxy \
+          docker compose --project-name arhdesign \
             --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml \
             up -d --no-build --wait --wait-timeout 180
           rm -f /tmp/release-files.tar.gz /tmp/release-images.tar.gz /tmp/production.env
@@ -129,9 +138,18 @@ jobs:
           ssh arh-production 'sh -se' <<'REMOTE'
           set -eu
           cd /opt/arhdesign
-          compose="docker compose --project-name arhdesign --profile telegram-proxy --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml"
+          compose="docker compose --project-name arhdesign --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml"
           $compose exec -T api wget -q -O /dev/null http://localhost:8080/healthz
           $compose exec -T api wget -q -O /dev/null http://localhost:8080/readyz
           $compose exec -T web node -e "fetch('http://localhost:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
           $compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile
+          telegram_proxy_url=$($compose exec -T api printenv TELEGRAM_PROXY_URL)
+          api_container=$($compose ps -q api)
+          image_tag=$(sed -n 's/^RELEASE_IMAGE_TAG="\([0-9a-f]*\)"$/\1/p' /etc/arhdesign/production.env)
+          test -n "$api_container"
+          test -n "$image_tag"
+          $compose exec -T api sh -c 'printf "%s\n" "$TELEGRAM_BOT_TOKEN"' \
+            | docker run --rm -i --network "container:$api_container" \
+              --entrypoint /usr/local/bin/telegram-proxy-check \
+              "arhdesign-telegram-proxy:$image_tag" --bot "$telegram_proxy_url"
           REMOTE

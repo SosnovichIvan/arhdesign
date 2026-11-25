@@ -32,44 +32,79 @@
 | `TELEGRAM_BOT_TOKEN` | Bot API; никогда не логируется |
 | `TELEGRAM_BOT_USERNAME` | `polismakovaSvetlanaBot`, без `@` |
 | `TELEGRAM_UPDATE_MODE` | `polling` в production |
-| `TELEGRAM_PROXY_URL` | `http://telegram-proxy:19840`, без прямого fallback |
+| `TELEGRAM_PROXY_URL` | внешний HTTP-прокси с авторизацией по IPv4 либо закрытый SSH-туннель `http://telegram-proxy:19840` |
 | `TELEGRAM_PROXY_SSH_*`, `TELEGRAM_PROXY_REMOTE_*` | закрытый SSH forward до Squid |
 | `ACCOUNT_TOKEN_HMAC_SECRET` | purpose-separated state/reset token hashes |
 | `OUTBOX_ENCRYPTION_KEY` | шифрование payload до отправки |
 
-Значения находятся в GitHub Repository secrets и runtime `.env` с mode `600`.
-Token/secret не передают в issue, Telegram, скриншот или shell command line.
+Токен бота хранится в GitHub Actions Secrets. Production workflow создаёт
+`/etc/arhdesign/production.env` на ВМ. Токен и приватный ключ следует передавать
+только через предусмотренное хранилище секретов.
 
 ## Deployment verification
 
 При старте poller вызывает `deleteWebhook` без удаления pending updates, затем
-получает только `message` через `getUpdates`. Проверка оператора после deploy:
+получает только `message` через `getUpdates`. Healthcheck прокси проверяет HTTPS
+до `api.telegram.org` через туннель и ожидает ответ `2xx` или `3xx`. После запуска
+production workflow вызывает `getMe` тем же маршрутом с токеном приложения
+и ожидает `200`.
+
+На production-ВМ с SSH-туннелем можно повторить обе проверки и посмотреть логи:
 
 ```sh
-set -a
-. /opt/arhdesign/.env
-set +a
-curl --fail --silent --show-error \
-  "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo" |
-  jq '{ok, url: .result.url, pending: .result.pending_update_count,
-       last_error_date: .result.last_error_date,
-       last_error_message: .result.last_error_message}'
+cd /opt/arhdesign
+arh_compose() {
+  docker compose --project-name arhdesign --profile telegram-proxy \
+    --env-file /etc/arhdesign/production.env -f infra/docker-compose.yml "$@"
+}
+arh_compose ps telegram-proxy api
+arh_compose exec -T telegram-proxy /usr/local/bin/telegram-proxy-check
+arh_compose exec -T api sh -c 'printf "%s\n" "$TELEGRAM_BOT_TOKEN"' |
+  arh_compose exec -T telegram-proxy /usr/local/bin/telegram-proxy-check --bot
+arh_compose logs --since 20m --tail 100 telegram-proxy
+arh_compose logs --since 20m --tail 200 api | grep 'Telegram polling'
 ```
 
-Вывод не содержит token. Ожидается пустой `url`, отсутствие
-`last_error_message` и уменьшающийся `pending_update_count`. Контейнер
-`telegram-proxy` должен быть healthy.
+Обе команды проверки завершаются без вывода при успехе. На старом релизе
+`telegram-proxy-check` отсутствует. После успешного `getMe` проверьте `/start`
+из тестового приватного чата, чтобы подтвердить получение обновлений и ответ бота.
+
+## Замена SSH-узла
+
+Если прежний узел недоступен, используйте доверенный SSH-сервер с доступом к
+закрытому Squid. Squid должен разрешать HTTPS `CONNECT` к `api.telegram.org:443`,
+а SSH-учётная запись должна иметь право пробрасывать порт до выбранного Squid.
+
+1. В GitHub Actions Variables задайте `TELEGRAM_PROXY_SSH_HOST`,
+   `TELEGRAM_PROXY_SSH_PORT`, `TELEGRAM_PROXY_SSH_USER`,
+   `TELEGRAM_PROXY_REMOTE_HOST` и `TELEGRAM_PROXY_REMOTE_PORT` для нового маршрута.
+   Пустые значения сохраняют прежние параметры.
+2. На production-ВМ подготовьте ключ туннеля и проверенный ключ нового хоста в
+   `/etc/arhdesign/telegram-proxy/id_ed25519` и `/etc/arhdesign/telegram-proxy/known_hosts`.
+   Сверьте отпечаток сервера по доверенному каналу перед обновлением `known_hosts`.
+3. Выпустите изменение штатным релизом по тегу с `main`. После деплоя проверьте
+   `getMe` и `/start` из тестового чата.
+
+## Готовый HTTP-прокси
+
+Укажите адрес `http://host:port` в GitHub Actions Variable `TELEGRAM_PROXY_URL`.
+Добавьте фактический исходящий IPv4 контейнера API в список разрешённых у
+провайдера. Для внешнего адреса релиз запускает API без контейнера SSH-туннеля.
+Smoke test выполняет `getMe` через заданный адрес из сети API. Пустое значение
+переменной включает штатный SSH-туннель.
 
 ## Диагностика
 
 | Симптом | Проверка | Действие |
 | --- | --- | --- |
-| `/start` молчит | proxy health, SSH tunnel, API health, polling logs | восстановить tunnel; API автоматически продолжит polling |
+| SSH не подключается | логи `telegram-proxy` | проверить доступ с production-ВМ, ключ хоста и авторизацию SSH |
+| SSH подключён, проверка HTTPS падает | логи `telegram-proxy`, Docker healthcheck | проверить Squid, разрешение `CONNECT`, DNS и исходящий HTTPS на SSH-узле |
+| `getMe` с токеном возвращает `401` | результат проверки `--bot` | сверить `TELEGRAM_BOT_TOKEN` в GitHub Actions Secrets |
+| `getMe` успешен, `/start` молчит | логи polling, в частности `409` | при конфликте найти второй экземпляр poller или активный webhook. После восстановления канала API продолжит polling |
 | Кнопка открывает не того бота | `TELEGRAM_BOT_USERNAME` и frontend deep link | установить имя без `@`, пересобрать web |
 | Бот не принимает ввод | private chat, state TTL, rate limit | начать `/start register` заново; не отключать limit |
 | Пароль верный, профиль не активирован | account status, Argon2 comparison category, binding uniqueness | проверить allowlisted audit/result; не читать/логировать пароль |
 | Reset не приходит | active binding, recipient status, outbox state/retry | исправить binding/delivery; не создавать ссылку вручную |
-| `pending_update_count` растёт | poller не читает updates или proxy недоступен | проверить proxy/API logs без payload и доступность туннеля |
 
 Для проверки связки используется отдельный тестовый account и приватный chat.
 Production credentials пользователя в тест не копируются.
