@@ -203,7 +203,7 @@ func (repository *Postgres) ListProjectContextChat(ctx context.Context, query pr
 		ChatID: chatContext.ChatID, ProjectID: chatContext.ProjectID, CurrentUserID: query.UserID,
 		Messages: messages, HasMore: hasMore, NextCursor: nextCursor, CanSend: true,
 	}
-	if kind == "context" {
+	if kind == "context" && chatContext.ContextID != "" {
 		page.Context = &chatContext
 	}
 	return page, nil
@@ -279,52 +279,58 @@ func authorizeContextChat(ctx context.Context, querier projectAccessQuerier, act
 	if kind == "context" && contextType != nil && contextID != nil {
 		value.ContextType, value.ContextID = *contextType, *contextID
 		value.ContextTitle, err = contextEntityTitle(ctx, querier, actor, projectID, value.ContextType, value.ContextID)
+		if actor.SuperAdmin && errors.Is(err, project.ErrNotFound) {
+			value.ContextType, value.ContextID = "", ""
+			err = nil
+		}
 	}
 	return value, kind, err
 }
 
+// Shared by conversation reads and notification recipient selection. The
+// caller has already checked project and chat access for subject.user_id.
+const visibleChatContextTitle = `
+	SELECT task.title FROM project_tasks task
+	WHERE subject.context_type='task' AND task.id=subject.context_id AND task.project_id=subject.project_id
+	  AND (subject.is_admin OR EXISTS (
+	    SELECT FROM project_memberships member
+	    WHERE member.project_id=task.project_id AND member.user_id=subject.user_id AND member.revoked_at IS NULL
+	      AND (member.project_role IN ('customer','project_admin') OR member.privileges @> '{"tasks.view_all":true}'::jsonb OR member.privileges @> '{"tasks.manage":true}'::jsonb)
+	  ) OR EXISTS (SELECT FROM project_task_assignees assignee WHERE assignee.task_id=task.id AND assignee.user_id=subject.user_id))
+	UNION ALL
+	SELECT material.name FROM project_materials material
+	WHERE subject.context_type='material' AND material.id=subject.context_id AND material.project_id=subject.project_id AND material.deleted_at IS NULL
+	  AND (subject.is_admin OR EXISTS (
+	    SELECT FROM project_memberships member
+	    WHERE member.project_id=material.project_id AND member.user_id=subject.user_id AND member.revoked_at IS NULL
+	      AND (member.project_role IN ('customer','project_admin') OR member.privileges ?| ARRAY['materials.view','materials.create','materials.update','materials.delete'])
+	  ))
+	UNION ALL
+	SELECT expense.description FROM project_expense_requests expense
+	WHERE subject.context_type='expense' AND expense.id=subject.context_id AND expense.project_id=subject.project_id
+	UNION ALL
+	SELECT document.name FROM project_documents document
+	WHERE subject.context_type='document' AND document.id=subject.context_id AND document.project_id=subject.project_id AND document.deleted_at IS NULL
+`
+
 func contextEntityTitle(ctx context.Context, querier projectAccessQuerier, actor project.Actor, projectID, contextType, contextID string) (string, error) {
-	var title string
 	switch contextType {
-	case "task":
-		if _, _, _, err := taskMutationAccess(ctx, querier, actor, projectID, contextID); err != nil {
-			return "", err
-		}
-		if err := querier.QueryRow(ctx, `SELECT title FROM project_tasks WHERE project_id=$1 AND id=$2`, projectID, contextID).Scan(&title); err != nil {
-			return "", mapContextEntityReadError("task", err)
-		}
-	case "material":
-		access, err := materialAccess(ctx, querier, actor, projectID, false)
-		if err != nil {
-			return "", err
-		}
-		if !access.view {
-			return "", project.ErrNotFound
-		}
-		if err = querier.QueryRow(ctx, `SELECT name FROM project_materials WHERE project_id=$1 AND id=$2 AND deleted_at IS NULL`, projectID, contextID).Scan(&title); err != nil {
-			return "", mapContextEntityReadError("material", err)
-		}
-	case "expense":
-		if _, _, _, err := projectExpenseAccess(ctx, querier, actor, projectID, false); err != nil {
-			return "", err
-		}
-		if err := querier.QueryRow(ctx, `SELECT description FROM project_expense_requests WHERE project_id=$1 AND id=$2`, projectID, contextID).Scan(&title); err != nil {
-			return "", mapContextEntityReadError("expense", err)
-		}
-	case "document":
-		if err := requireProjectAccess(ctx, querier, actor, projectID, false); err != nil {
-			return "", err
-		}
-		if err := querier.QueryRow(ctx, `SELECT name FROM project_documents WHERE project_id=$1 AND id=$2 AND deleted_at IS NULL`, projectID, contextID).Scan(&title); err != nil {
-			return "", mapContextEntityReadError("document", err)
-		}
+	case "task", "material", "expense", "document":
 	default:
 		return "", project.ErrNotFound
 	}
-	return title, nil
+	var title string
+	err := querier.QueryRow(ctx, `
+		WITH subject(context_type,context_id,project_id,user_id,is_admin) AS (VALUES ($1::text,$2::uuid,$3::uuid,$4::uuid,$5::boolean))
+		SELECT context.title FROM subject CROSS JOIN LATERAL (`+visibleChatContextTitle+`) context(title)
+	`, contextType, contextID, projectID, actor.UserID, actor.SuperAdmin).Scan(&title)
+	return title, mapContextEntityReadError(contextType, err)
 }
 
 func mapContextEntityReadError(entity string, err error) error {
+	if err == nil {
+		return nil
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return project.ErrNotFound
 	}

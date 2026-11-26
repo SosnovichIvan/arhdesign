@@ -229,12 +229,14 @@ func (endpoint *AccountEndpoint) setSessionCookies(w http.ResponseWriter, sessio
 	now := time.Now()
 	http.SetCookie(w, &http.Cookie{Name: endpoint.cookieName("session"), Value: session.AccessToken, Path: "/", HttpOnly: true, Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode, Expires: session.AccessExpiresAt, MaxAge: maxAge(now, session.AccessExpiresAt)})
 	refresh := &http.Cookie{Name: endpoint.cookieName("refresh"), Value: session.RefreshToken, Path: "/api/v1/auth", HttpOnly: true, Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode}
+	csrf := &http.Cookie{Name: endpoint.cookieName("csrf"), Value: session.CSRFToken, Path: "/", Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode}
 	if session.RememberMe {
 		refresh.Expires = session.RefreshExpiresAt
 		refresh.MaxAge = maxAge(now, session.RefreshExpiresAt)
+		csrf.Expires, csrf.MaxAge = refresh.Expires, refresh.MaxAge
 	}
 	http.SetCookie(w, refresh)
-	http.SetCookie(w, &http.Cookie{Name: endpoint.cookieName("csrf"), Value: session.CSRFToken, Path: "/", Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode, Expires: session.AccessExpiresAt, MaxAge: maxAge(now, session.AccessExpiresAt)})
+	http.SetCookie(w, csrf)
 }
 
 func (endpoint *AccountEndpoint) clearSessionCookies(w http.ResponseWriter) {

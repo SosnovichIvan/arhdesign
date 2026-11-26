@@ -25,6 +25,7 @@ export function ProjectChatPage({ chatId, projectId }: Readonly<{ chatId?: strin
 	const [settingsChatId, setSettingsChatId] = useState("");
 	const [deletingChatId, setDeletingChatId] = useState("");
   const [arrivalNotice, setArrivalNotice] = useState("");
+  const [unavailableChat, setUnavailableChat] = useState(false);
   const [mobileDetail, setMobileDetail] = useState(Boolean(chatId));
   const bottomRef = useRef<HTMLDivElement>(null);
   const workspaceKeyRef = useRef("");
@@ -47,10 +48,21 @@ export function ProjectChatPage({ chatId, projectId }: Readonly<{ chatId?: strin
     try {
       const [projectValue, list] = await Promise.all([loadProject(projectId), loadProjectChats(projectId)]);
       const visibleChat = !chatId || list.items.some((item) => item.id === chatId);
-      const nextID = visibleChat ? chatId ?? list.items[0]?.id ?? "" : "";
-      if (!visibleChat) setSendError("Чат недоступен");
-      const page = nextID ? await loadConversation(nextID) : null;
+      let nextID = visibleChat ? chatId ?? list.items[0]?.id ?? "" : "";
+      let page: ChatPageData | null = null;
+      let missing = !visibleChat;
+      if (nextID) {
+        try {
+          page = await loadConversation(nextID);
+        } catch (reason) {
+          if (!(reason instanceof ProjectApiError) || reason.status !== 404) throw reason;
+          missing = true;
+          nextID = "";
+        }
+      }
       if (workspaceRequestRef.current !== requestID) return;
+      setUnavailableChat(missing);
+      if (missing) setMobileDetail(false);
       setProject(projectValue); setChats(list.items); setSelectedId(nextID); setChat(page); setState("ready");
       requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: "end" }));
     } catch (reason) {
@@ -98,7 +110,7 @@ export function ProjectChatPage({ chatId, projectId }: Readonly<{ chatId?: strin
 
   async function selectChat(id: string) {
     setSelectedId(id); setChat(null); setSendError(""); setMobileDetail(true);
-    try { const page = await loadConversation(id); setChat(page); setChats((items) => items.map((item) => item.id === id ? { ...item, unreadCount: 0 } : item)); window.history.pushState(window.history.state, "", `/account/projects/${encodeURIComponent(projectId)}/chat/${encodeURIComponent(id)}`); }
+    try { const page = await loadConversation(id); setChat(page); setUnavailableChat(false); setChats((items) => items.map((item) => item.id === id ? { ...item, unreadCount: 0 } : item)); window.history.pushState(window.history.state, "", `/account/projects/${encodeURIComponent(projectId)}/chat/${encodeURIComponent(id)}`); }
     catch (reason) { setSendError(reason instanceof Error ? reason.message : "Не удалось открыть чат"); }
   }
 
@@ -153,6 +165,7 @@ export function ProjectChatPage({ chatId, projectId }: Readonly<{ chatId?: strin
     <div className="mt-7 grid min-h-[680px] overflow-hidden border border-border bg-surface tablet:grid-cols-[280px_minmax(0,1fr)] desktop:grid-cols-[300px_minmax(0,1fr)]">
       <aside className={`${mobileDetail ? "hidden" : "block"} border-b border-border tablet:block tablet:border-b-0 tablet:border-r`} aria-label="Список чатов">
         <div className="flex items-center justify-between gap-3 border-b border-border p-4"><div><p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-action">Проект</p><h1 className="mt-1 text-xl font-medium">Чаты</h1></div><IconButton aria-label="Создать чат" className="size-9 border-icon-button-border bg-icon-button text-icon-button-text" data-cy="create-project-chat" onClick={() => setCreateOpen(true)} tooltip="Создать чат"><PlusIcon /></IconButton></div>
+        {unavailableChat ? <p className="border-b border-border px-4 py-3 text-sm text-secondary" role="status">Этот чат недоступен. Здесь показаны чаты, которые вы можете открыть.</p> : null}
 		<div className="max-h-[610px] overflow-y-auto p-2">{chats.length === 0 ? <p className="p-4 text-sm text-secondary">Создайте первый чат проекта.</p> : chats.map((item) => <div className={`flex items-center border-b border-border transition-colors ${selectedId === item.id ? "bg-action/10" : "hover:bg-page"}`} data-cy={`chat-list-item-${item.id}`} key={item.id}><Link aria-current={selectedId === item.id ? "page" : undefined} className="flex min-w-0 flex-1 items-center gap-3 px-3 py-4 text-left" href={`/account/projects/${encodeURIComponent(projectId)}/chat/${encodeURIComponent(item.id)}`} onClick={(event) => { event.preventDefault(); void selectChat(item.id); }} scroll={false}><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{item.name}</span><span className="mt-1 block truncate text-xs text-secondary">{item.contextType ? `${contextTypeLabel(item.contextType)}${item.contextTitle ? ` · ${item.contextTitle}` : ""}` : "Проект"} · {item.memberCount} участн.</span></span>{item.unreadCount > 0 ? <span aria-label={`Непрочитанных сообщений: ${item.unreadCount}`} className="inline-flex min-w-6 shrink-0 items-center justify-center rounded-full bg-action px-2 py-0.5 text-xs font-semibold text-inverse-text">{item.unreadCount > 99 ? "99+" : item.unreadCount}</span> : null}</Link>{item.canManage ? <span className="flex shrink-0 items-center gap-1 pr-2"><IconButton aria-label={`Настроить чат «${item.name}»`} className="size-7 border-icon-button-border bg-icon-button text-icon-button-text hover:bg-icon-button-hover" onClick={() => openChatSettings(item)} tooltip="Настроить чат"><SettingsIcon /></IconButton><IconButton aria-label={`Удалить чат «${item.name}»`} className="size-7 border-danger/40 bg-icon-button text-danger hover:bg-icon-button-hover" disabled={deletingChatId === item.id} onClick={() => void removeChatFromList(item)} tooltip="Удалить чат"><TrashIcon /></IconButton></span> : null}</div>)}</div>
       </aside>
 	  <div className={`${mobileDetail ? "flex" : "hidden"} min-w-0 flex-col tablet:flex`} data-cy="project-chat-detail">

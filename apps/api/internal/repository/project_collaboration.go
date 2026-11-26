@@ -15,7 +15,7 @@ func (repository *Postgres) ListProjectChats(ctx context.Context, actor project.
 		return project.ChatList{}, err
 	}
 	rows, err := repository.pool.Query(ctx, `
-		SELECT chat.id::text,chat.project_id::text,chat.kind,chat.name,chat.context_type,chat.context_id::text,
+		SELECT chat.id::text,chat.project_id::text,chat.kind,chat.name,chat.context_type,chat.context_id::text,context.title,
 		       chat.created_at,chat.version,
 		       (SELECT count(*)::int FROM chat_memberships member WHERE member.chat_id=chat.id AND member.removed_at IS NULL),
 		       (SELECT count(*)::int
@@ -27,9 +27,12 @@ func (repository *Postgres) ListProjectChats(ctx context.Context, actor project.
 		         SELECT 1 FROM project_memberships membership WHERE membership.project_id=chat.project_id
 		         AND membership.user_id=$2 AND membership.project_role='project_admin' AND membership.revoked_at IS NULL))
 		FROM chats chat
+		CROSS JOIN LATERAL (SELECT chat.context_type,chat.context_id,chat.project_id,$2::uuid AS user_id,$3::boolean AS is_admin) subject
+		LEFT JOIN LATERAL (`+visibleChatContextTitle+`) context(title) ON chat.kind='context'
 		WHERE chat.project_id=$1 AND chat.archived_at IS NULL
 		  AND ($3 OR EXISTS (SELECT 1 FROM chat_memberships member WHERE member.chat_id=chat.id AND member.user_id=$2 AND member.removed_at IS NULL))
 		  AND ($3 OR EXISTS (SELECT 1 FROM project_memberships membership WHERE membership.project_id=chat.project_id AND membership.user_id=$2 AND membership.revoked_at IS NULL))
+		  AND ($3 OR chat.kind='project' OR context.title IS NOT NULL)
 		ORDER BY chat.created_at,chat.id
 	`, projectID, actor.UserID, actor.SuperAdmin)
 	if err != nil {
@@ -39,18 +42,8 @@ func (repository *Postgres) ListProjectChats(ctx context.Context, actor project.
 	items := []project.ChatSummary{}
 	for rows.Next() {
 		var value project.ChatSummary
-		if err = rows.Scan(&value.ID, &value.ProjectID, &value.Kind, &value.Name, &value.ContextType, &value.ContextID, &value.CreatedAt, &value.Version, &value.MemberCount, &value.UnreadCount, &value.CanManage); err != nil {
+		if err = rows.Scan(&value.ID, &value.ProjectID, &value.Kind, &value.Name, &value.ContextType, &value.ContextID, &value.ContextTitle, &value.CreatedAt, &value.Version, &value.MemberCount, &value.UnreadCount, &value.CanManage); err != nil {
 			return project.ChatList{}, fmt.Errorf("scan project chat: %w", err)
-		}
-		if value.ContextType != nil && value.ContextID != nil {
-			title, titleErr := contextEntityTitle(ctx, repository.pool, actor, projectID, *value.ContextType, *value.ContextID)
-			if errors.Is(titleErr, project.ErrNotFound) || errors.Is(titleErr, project.ErrForbidden) {
-				continue
-			}
-			if titleErr != nil {
-				return project.ChatList{}, titleErr
-			}
-			value.ContextTitle = &title
 		}
 		items = append(items, value)
 	}
@@ -305,9 +298,22 @@ func (repository *Postgres) MarkProjectChatRead(ctx context.Context, command pro
 
 func (repository *Postgres) ListAccountNotifications(ctx context.Context, actor project.Actor, pageSize int) (project.AccountNotificationList, error) {
 	rows, err := repository.pool.Query(ctx, `
-		SELECT id::text,project_id::text,event_type,title,body,href,created_at,read_at
-		FROM account_notifications
-		WHERE recipient_user_id=$1
+		WITH visible AS (
+			SELECT note.* FROM account_notifications note
+			WHERE note.recipient_user_id=$1 AND (
+				note.event_type NOT IN ('project.chat.message_created','project.context_chat.message_created')
+				OR EXISTS (
+					SELECT FROM chat_messages message
+					JOIN (`+eligibleChatNotificationRecipients+`) recipient
+					  ON recipient.chat_id=message.chat_id AND recipient.project_id=message.project_id
+					WHERE message.id=CASE WHEN pg_input_is_valid(note.event_id,'uuid') THEN note.event_id::uuid END
+					  AND message.deleted_at IS NULL AND message.project_id=note.project_id AND recipient.user_id=note.recipient_user_id
+				)
+			)
+		)
+		SELECT id::text,project_id::text,event_type,title,body,href,created_at,read_at,
+		       (SELECT count(*)::int FROM visible WHERE read_at IS NULL)
+		FROM visible
 		ORDER BY created_at DESC,id DESC
 		LIMIT $2
 	`, actor.UserID, pageSize)
@@ -318,16 +324,13 @@ func (repository *Postgres) ListAccountNotifications(ctx context.Context, actor 
 	result := project.AccountNotificationList{Items: []project.AccountNotification{}}
 	for rows.Next() {
 		var item project.AccountNotification
-		if err = rows.Scan(&item.ID, &item.ProjectID, &item.EventType, &item.Title, &item.Body, &item.Href, &item.CreatedAt, &item.ReadAt); err != nil {
+		if err = rows.Scan(&item.ID, &item.ProjectID, &item.EventType, &item.Title, &item.Body, &item.Href, &item.CreatedAt, &item.ReadAt, &result.UnreadCount); err != nil {
 			return result, fmt.Errorf("scan account notification: %w", err)
 		}
 		result.Items = append(result.Items, item)
 	}
 	if err = rows.Err(); err != nil {
 		return result, fmt.Errorf("iterate account notifications: %w", err)
-	}
-	if err = repository.pool.QueryRow(ctx, `SELECT count(*)::int FROM account_notifications WHERE recipient_user_id=$1 AND read_at IS NULL`, actor.UserID).Scan(&result.UnreadCount); err != nil {
-		return result, fmt.Errorf("count unread account notifications: %w", err)
 	}
 	return result, nil
 }

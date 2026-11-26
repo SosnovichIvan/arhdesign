@@ -9,6 +9,8 @@ import { ThemeToggle } from "@/features/themeToggle";
 import { FrontendErrorReporter, TechnicalSupportWidget } from "@/features/technicalSupport";
 import { AccountNotificationCenter } from "@/features/accountNotifications";
 import { loadCurrentAccount, ProjectApiError } from "@/features/accountProjects/api/projects";
+import { ReleaseNotesDrawer } from "@/features/releaseNotes/releaseNotesDrawer";
+import { getWithAccountSession } from "@/shared/lib/accountSession";
 
 type NavigationContextValue = { setProjectCount: (count: number) => void };
 const NavigationContext = createContext<NavigationContextValue | null>(null);
@@ -46,22 +48,32 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
 
 	useEffect(() => {
 		const controller = new AbortController();
-		void loadCurrentAccount(controller.signal).then((account) => {
-			setIsGlobalAdministrator(account.globalRole === "super_admin" || account.globalRole === "technical_admin");
-			setProfileInitial((account.firstName || account.login || "").trim().slice(0, 1).toLocaleUpperCase("ru-RU"));
-			setAccountAuthorized(true);
-		}).catch((reason: unknown) => {
-			if (reason instanceof DOMException && reason.name === "AbortError") return;
-			if (reason instanceof ProjectApiError && reason.status === 401) router.replace("/?auth=login");
-		});
-		return () => controller.abort();
+		function checkSession() {
+			void loadCurrentAccount(controller.signal).then((account) => {
+				setIsGlobalAdministrator(account.globalRole === "super_admin" || account.globalRole === "technical_admin");
+				setProfileInitial((account.firstName || account.login || "").trim().slice(0, 1).toLocaleUpperCase("ru-RU"));
+				setAccountAuthorized(true);
+			}).catch((reason: unknown) => {
+				if (reason instanceof DOMException && reason.name === "AbortError") return;
+				if (reason instanceof ProjectApiError && reason.status === 401) {
+					setAccountAuthorized(false);
+					router.replace("/?auth=login");
+				}
+			});
+		}
+		checkSession();
+		window.addEventListener("focus", checkSession);
+		return () => {
+			controller.abort();
+			window.removeEventListener("focus", checkSession);
+		};
 	}, [router]);
 
 	useEffect(() => {
-		if (!projectId) return;
+		if (!projectId || !accountAuthorized) return;
 		const controller = new AbortController();
-		const accessUrl = projectId ? `/api/v1/projects/${encodeURIComponent(projectId)}` : "/api/v1/projects?pageSize=1";
-		void fetch(accessUrl, { credentials: "same-origin", signal: controller.signal }).then(async (response) => {
+		const accessUrl = `/api/v1/projects/${encodeURIComponent(projectId)}`;
+		void getWithAccountSession(accessUrl, controller.signal).then(async (response) => {
 			if (response.status === 401) {
 				router.replace("/?auth=login");
 				return;
@@ -75,7 +87,7 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
 			if (!(reason instanceof DOMException && reason.name === "AbortError")) setAuthorizedPath(pathname);
 		});
 		return () => controller.abort();
-	}, [pathname, projectId, router]);
+	}, [accountAuthorized, pathname, projectId, router]);
 
   async function logout() {
     setIsLoggingOut(true);
@@ -116,6 +128,7 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
             <div className="hidden tablet:block"><ThemeToggle /></div>
             {isAuthorized ? <TechnicalSupportWidget /> : null}
             <AccountNotificationCenter />
+            {accountAuthorized ? <ReleaseNotesDrawer /> : null}
             <button aria-label="Выйти из личного кабинета" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-sm hover:bg-surface tablet:hidden" disabled={isLoggingOut} onClick={() => void logout()} type="button"><ExitIcon /> Выйти</button>
             <Link aria-label="Настройки профиля" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-action font-display text-lg text-inverse-text" href="/account/profile">{profileInitial || <UsersIcon />}</Link>
           </header>

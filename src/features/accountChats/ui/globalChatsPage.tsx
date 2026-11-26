@@ -1,6 +1,7 @@
 "use client";
 
 import { ChatImages } from "@/features/chatImages";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import { Autocomplete, Button, Dialog, IconButton, Input, Textarea, type AutocompleteOption } from "@/shared/ui";
@@ -80,6 +81,7 @@ export function GlobalChatsPage() {
       <div><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Рабочее пространство</p><h1 className="mt-2 font-display text-4xl leading-none tablet:text-5xl" id="global-chats-title">Чаты</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-secondary">Личные и групповые обсуждения с участниками платформы.</p></div>
       <IconButton aria-label="Создать чат" className="border-icon-button-border bg-icon-button text-icon-button-text hover:border-action hover:bg-icon-button-hover" data-cy="create-global-chat" onClick={() => setCreateOpen(true)} tooltip="Создать чат"><PlusIcon /></IconButton>
     </header>
+    <Link className="mt-4 inline-flex min-h-11 items-center border border-border px-4 text-sm font-medium hover:bg-surface" href="/account/chats/projects">Чаты проектов</Link>
 
     {state === "loading" ? <div aria-label="Загрузка чатов" className="mt-8 h-[620px] animate-pulse border border-border bg-surface" role="status" /> : null}
     {state === "error" ? <div className="mt-8 border border-danger/40 bg-surface p-7" role="alert"><h2 className="font-display text-3xl">Чаты не загрузились</h2><p className="mt-3 text-sm text-secondary">{error}</p><Button className="mt-5" onClick={() => setReloadKey((value) => value + 1)} variant="secondary">Повторить</Button></div> : null}

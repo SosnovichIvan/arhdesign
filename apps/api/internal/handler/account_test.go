@@ -505,6 +505,9 @@ func TestRefreshAndLogoutRotateAndClearCookies(t *testing.T) {
 	if refreshCookie == nil || csrfCookie == nil {
 		t.Fatalf("login cookies=%v", cookies)
 	}
+	if !csrfCookie.Expires.Equal(refreshCookie.Expires) || csrfCookie.MaxAge <= cookies["__Host-arhdesign_session"].MaxAge {
+		t.Fatal("the CSRF cookie must remain available after the access cookie expires")
+	}
 
 	refresh := httptest.NewRecorder()
 	refreshRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)

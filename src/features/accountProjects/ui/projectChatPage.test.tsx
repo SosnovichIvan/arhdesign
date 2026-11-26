@@ -18,6 +18,20 @@ beforeEach(()=>{Object.defineProperty(document,"cookie",{configurable:true,value
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.clearAllMocks();vi.unstubAllGlobals()});
 
 describe("ProjectChatPage",()=>{
+  it.each([true, false])("keeps accessible chats visible when a linked chat is unavailable (listed=%s)", async (listed) => {
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("/chats")) return json({ canCreate: true, items: listed ? [summary, { ...summary, id: "missing", name: "Старый чат" }] : [summary] });
+      if (url.includes("/chats/missing?")) return json({ error: { message: "Чат не найден" } }, 404);
+      if (url.includes("/chats/chat-1?")) return json(page([]));
+      return json(project);
+    }));
+    render(<ProjectChatPage chatId="missing" projectId="project-1" />);
+    expect(await screen.findByText(/Этот чат недоступен/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("link", { name: /Общий чат проекта/ }));
+    expect(await screen.findByText("Сообщений пока нет")).toBeTruthy();
+    expect(screen.queryByText(/Этот чат недоступен/)).toBeNull();
+  });
   it("shows the chat list, history and sends a message",async()=>{const fetchMock=vi.fn((input:string|URL|Request,init?:RequestInit)=>{const url=String(input);if(init?.method==="POST"&&url.endsWith("/messages"))return json(ownMessage,201);if(url.endsWith("/chats"))return json({canCreate:true,items:[summary]});if(url.includes("/chats/chat-1?"))return json(page([firstMessage]));return json(project)});vi.stubGlobal("fetch",fetchMock);render(<ProjectChatPage projectId="project-1"/>);expect(await screen.findByText("Проверила планировку")).toBeTruthy();expect(screen.getAllByText("Общий чат проекта").length).toBeGreaterThan(0);fireEvent.change(screen.getByLabelText("Сообщение"),{target:{value:"Отправлено"}});fireEvent.click(screen.getByRole("button",{name:"Отправить сообщение"}));expect(await screen.findByText("Отправлено")).toBeTruthy()});
 	it("creates a named chat with selected project members",async()=>{const created={...summary,id:"chat-2",name:"Согласование кухни"};const fetchMock=vi.fn((input:string|URL|Request,init?:RequestInit)=>{const url=String(input);if(init?.method==="POST"&&url.endsWith("/chats"))return json(created,201);if(url.endsWith("/members"))return json({canManage:true,items:[{firstName:"Анна",joinedAt:"2026-09-24T10:00:00Z",lastName:"Иванова",login:"anna",middleName:null,professionalRole:{code:"designer",name:"Дизайнер"},projectRoles:["executor"],removable:true,userId:"user-2"}]});if(url.endsWith("/chats"))return json({canCreate:true,items:[summary]});if(url.includes("/chats/chat-"))return json(page([]));return json(project)});vi.stubGlobal("fetch",fetchMock);render(<ProjectChatPage projectId="project-1"/>);await screen.findByText("Сообщений пока нет");fireEvent.click(screen.getByRole("button",{name:"Создать чат"}));fireEvent.change(screen.getByLabelText("Название *"),{target:{value:"Согласование кухни"}});fireEvent.change(screen.getByLabelText("Добавить участников"),{target:{value:"Анна"}});fireEvent.click(await screen.findByRole("option",{name:/Анна Иванова/}));expect(screen.getByRole("list",{name:"Выбранные участники"})).toBeTruthy();fireEvent.click(screen.getAllByRole("button",{name:"Создать чат"}).at(-1)!);await waitFor(()=>expect(fetchMock.mock.calls.some(([url,options])=>String(url).endsWith("/chats")&&options?.method==="POST"&&String(options.body).includes("Согласование кухни")&&String(options.body).includes("user-2"))).toBe(true))});
   it("renders a useful empty state",async()=>{vi.stubGlobal("fetch",vi.fn((input:string|URL|Request)=>{const url=String(input);if(url.endsWith("/chats"))return json({canCreate:true,items:[summary]});if(url.includes("/chats/chat-1?"))return json(page([]));return json(project)}));render(<ProjectChatPage projectId="project-1"/>);expect(await screen.findByText("Сообщений пока нет")).toBeTruthy()});

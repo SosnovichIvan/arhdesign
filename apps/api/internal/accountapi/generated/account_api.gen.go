@@ -888,6 +888,16 @@ type RegisterRequest struct {
 	ProfessionalRoleCode string              `json:"professionalRoleCode"`
 }
 
+// ReleaseNote defines model for ReleaseNote.
+type ReleaseNote struct {
+	Added []string `json:"added"`
+	Fixed []struct {
+		Description string `json:"description"`
+		Source      string `json:"source"`
+	} `json:"fixed"`
+	Version string `json:"version"`
+}
+
 // ResetPasswordRequest defines model for ResetPasswordRequest.
 type ResetPasswordRequest struct {
 	Password             *string `json:"password,omitempty"`
@@ -1524,6 +1534,9 @@ type ServerInterface interface {
 	// List upcoming tasks and meetings visible in one project
 	// (GET /v1/projects/{projectId}/upcoming)
 	ListProjectUpcomingItems(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectUpcomingItemsParams)
+	// List release notes for signed-in users, newest first
+	// (GET /v1/release-notes)
+	ListReleaseNotes(w http.ResponseWriter, r *http.Request)
 	// Get interface settings of the current account
 	// (GET /v1/settings)
 	GetUserSettings(w http.ResponseWriter, r *http.Request)
@@ -4404,6 +4417,26 @@ func (siw *ServerInterfaceWrapper) ListProjectUpcomingItems(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// ListReleaseNotes operation middleware
+func (siw *ServerInterfaceWrapper) ListReleaseNotes(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListReleaseNotes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetUserSettings(w http.ResponseWriter, r *http.Request) {
 
@@ -4680,6 +4713,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/v1/projects/{projectId}/tasks", wrapper.CreateProjectTask)
 	m.HandleFunc("PATCH "+options.BaseURL+"/v1/projects/{projectId}/tasks/{taskId}", wrapper.UpdateProjectTask)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/projects/{projectId}/upcoming", wrapper.ListProjectUpcomingItems)
+	m.HandleFunc("GET "+options.BaseURL+"/v1/release-notes", wrapper.ListReleaseNotes)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/settings", wrapper.GetUserSettings)
 	m.HandleFunc("PUT "+options.BaseURL+"/v1/settings", wrapper.UpdateUserSettings)
 	m.HandleFunc("POST "+options.BaseURL+"/v1/technical/feedback", wrapper.CreateTechnicalFeedback)

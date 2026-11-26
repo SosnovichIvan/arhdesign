@@ -14,9 +14,10 @@ type DialogProps = {
   closeLabel?: string;
   closeButtonClassName?: string;
   contentClassName?: string;
+  placement?: "center" | "right";
 };
 
-export function Dialog({ children, className, closeButtonClassName, contentClassName, closeLabel = "Закрыть форму", isOpen, label, onClose }: DialogProps) {
+export function Dialog({ children, className, closeButtonClassName, contentClassName, closeLabel = "Закрыть форму", isOpen, label, onClose, placement = "center" }: DialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -65,12 +66,12 @@ export function Dialog({ children, className, closeButtonClassName, contentClass
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-overlay p-4 backdrop-blur-[2px] tablet:p-7" data-dialog-overlay onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
-      <section aria-label={label} aria-modal="true" className={cn("relative flex max-h-full w-full max-w-[640px] flex-col overflow-hidden border border-border bg-surface shadow-surface", className)} onKeyDown={handleTabKey} onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog">
+    <div className={cn("fixed inset-0 z-50 grid bg-overlay backdrop-blur-[2px]", placement === "right" ? "justify-items-end" : "place-items-center p-4 tablet:p-7")} data-dialog-overlay onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
+      <section aria-label={label} aria-modal="true" className={cn("relative flex max-h-full w-full flex-col overflow-hidden border border-border bg-surface shadow-surface", placement === "right" ? "h-dvh max-w-[540px]" : "max-w-[640px]", className)} onKeyDown={handleTabKey} onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog">
         <div className="flex shrink-0 justify-end px-4 pt-3 pb-1 tablet:px-6">
           <IconButton aria-label={closeLabel} className={cn("shrink-0 text-secondary", closeButtonClassName)} onClick={onClose} ref={closeButtonRef}>×</IconButton>
         </div>
-        <div className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 tablet:px-12 tablet:pb-12", contentClassName)}>
+        <div aria-label={placement === "right" ? "Содержимое панели" : undefined} className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 tablet:px-12 tablet:pb-12", contentClassName)} role={placement === "right" ? "region" : undefined} tabIndex={placement === "right" ? 0 : undefined}>
           {children}
         </div>
       </section>

@@ -19,6 +19,8 @@ tags:
     description: Per-user interface settings and per-project personal settings.
   - name: Chats
     description: Personal and named group conversations outside project scope.
+  - name: Release notes
+    description: Product updates for signed-in accounts.
   - name: TechnicalSupport
     description: Sanitized runtime reports and authenticated product feedback.
 security:
@@ -323,6 +325,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AccountView'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /v1/release-notes:
+    get:
+      tags: [Release notes]
+      operationId: listReleaseNotes
+      summary: List release notes for signed-in users, newest first
+      security: [{ accountSession: [] }]
+      responses:
+        '200':
+          description: Release notes with new features and attributed fixes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReleaseNote' }
         '401':
           $ref: '#/components/responses/Unauthenticated'
 
@@ -2151,6 +2170,22 @@ components:
             $ref: '#/components/schemas/ApiError'
 
   schemas:
+    ReleaseNote:
+      type: object
+      required: [version, added, fixed]
+      properties:
+        version: { type: string, example: '1.0.19' }
+        added:
+          type: array
+          items: { type: string }
+        fixed:
+          type: array
+          items:
+            type: object
+            required: [description, source]
+            properties:
+              description: { type: string }
+              source: { type: string }
     ChatImage:
       type: object
       required: [id, name, mediaType, sizeBytes, width, height, createdAt, pinned, canDelete]
