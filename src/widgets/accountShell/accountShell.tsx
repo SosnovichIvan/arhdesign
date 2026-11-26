@@ -11,6 +11,7 @@ import { AccountNotificationCenter } from "@/features/accountNotifications";
 import { loadCurrentAccount, ProjectApiError } from "@/features/accountProjects/api/projects";
 import { ReleaseNotesDrawer } from "@/features/releaseNotes/releaseNotesDrawer";
 import { getWithAccountSession } from "@/shared/lib/accountSession";
+import { IconButton, Tooltip } from "@/shared/ui";
 
 type NavigationContextValue = { setProjectCount: (count: number) => void };
 const NavigationContext = createContext<NavigationContextValue | null>(null);
@@ -116,7 +117,7 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
         <aside className="border-b border-border bg-surface tablet:sticky tablet:top-0 tablet:flex tablet:h-screen tablet:flex-col tablet:overflow-hidden tablet:border-b-0 tablet:border-r" aria-label="Навигация личного кабинета">
           <div className="flex min-h-[72px] items-center gap-3 border-b border-border px-5">
             <Link aria-label="Личный кабинет — проекты" className="mr-auto inline-flex items-center gap-3 text-sm font-semibold tracking-[0.08em]" href="/account"><Image alt="" aria-hidden="true" className="size-8 rounded-md" height={32} src="/icon.svg" width={32} /><span className="hidden tablet:inline">ПОЛИСМАКОВА С.</span></Link>
-            <div className="tablet:hidden"><ThemeToggle /></div>
+            <div className="tablet:hidden"><ThemeToggle showTooltip /></div>
           </div>
 		  {projectRoute ? <ProjectNavigation key={projectRoute.projectId} pathname={pathname} projectId={projectRoute.projectId} projectName={activeProject?.id === projectRoute.projectId ? activeProject.name : undefined} /> : <GlobalNavigation isGlobalAdministrator={isGlobalAdministrator} pathname={pathname} projectCount={projectCount} />}
           <div className="mt-auto hidden border-t border-border p-4 tablet:block">
@@ -126,12 +127,12 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
         <div className="min-w-0">
           <header className="flex min-h-[64px] items-center justify-end gap-2 border-b border-border px-4 tablet:min-h-[72px] tablet:gap-3 tablet:px-8">
             <span className="mr-auto hidden text-sm text-secondary tablet:block">Рабочее пространство</span>
-            <div className="hidden tablet:block"><ThemeToggle /></div>
+            <div className="hidden tablet:block"><ThemeToggle showTooltip /></div>
             {isAuthorized ? <TechnicalSupportWidget /> : null}
             <AccountNotificationCenter />
             {accountId ? <ReleaseNotesDrawer accountId={accountId} key={accountId} /> : null}
-            <button aria-label="Выйти из личного кабинета" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-sm hover:bg-surface tablet:hidden" disabled={isLoggingOut} onClick={() => void logout()} type="button"><ExitIcon /> Выйти</button>
-            <Link aria-label="Настройки профиля" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-action font-display text-lg text-inverse-text" href="/account/profile">{profileInitial || <UsersIcon />}</Link>
+            <div className="shrink-0 tablet:hidden"><IconButton aria-label="Выйти из личного кабинета" className="w-auto min-h-11 gap-2 px-3 text-sm" disabled={isLoggingOut} onClick={() => void logout()} tooltip="Выйти из личного кабинета" tooltipAlign="end" tooltipPlacement="bottom"><ExitIcon /> Выйти</IconButton></div>
+            <Tooltip align="end" placement="bottom" text="Настройки профиля"><Link aria-label="Настройки профиля" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-action font-display text-lg text-inverse-text" href="/account/profile">{profileInitial || <UsersIcon />}</Link></Tooltip>
           </header>
 		  <main className="px-5 py-9 tablet:px-8 tablet:py-12 desktop:px-12"><div className="mx-auto max-w-[1280px]">{isAuthorized ? children : <div aria-label="Проверка доступа" className="h-72 animate-pulse border border-border bg-surface" role="status"><span className="sr-only">Проверяем доступ…</span></div>}</div></main>
         </div>
