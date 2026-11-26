@@ -48,6 +48,11 @@ export type UpdateProjectPayload = {
 };
 
 export type CurrentAccount = {
+  email?: string;
+  firstName?: string;
+  lastName?: string | null;
+  middleName?: string | null;
+  professionalRole?: ProfessionalRole;
   globalRole: "super_admin" | "technical_admin" | null;
   id: string;
   login: string;

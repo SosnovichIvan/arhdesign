@@ -8,6 +8,7 @@ import { ThemePreferenceProvider, useThemePreference } from "./themePreferencePr
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   document.documentElement.dataset.theme = "light";
   vi.unstubAllGlobals();
 });
@@ -56,7 +57,8 @@ describe("ThemePreferenceProvider", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
 
     window.dispatchEvent(new CustomEvent("arhdesign:session-changed", { detail: { authenticated: false } }));
-    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem("arhdesign:theme")).toBe("dark");
   });
 
   it("keeps the local default when loading authenticated settings fails", async () => {

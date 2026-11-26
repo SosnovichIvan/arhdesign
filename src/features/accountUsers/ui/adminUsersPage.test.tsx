@@ -123,3 +123,25 @@ describe("AdminUsersPage", () => {
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes("status=active"))).toBe(true));
   });
 });
+
+it("keeps each user's status and actions together on narrow screens", async () => {
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  const staff = [
+    user,
+    { ...user, firstName: "", lastName: "", id: "staff-2", login: "super.admin", globalRole: "super_admin", status: "disabled", lastInteractiveLoginAt: "2026-09-25T12:00:00Z" },
+    { ...user, firstName: "Иван", lastName: null, id: "staff-3", login: "tech.admin", globalRole: "technical_admin" },
+  ];
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ items: staff, hasMore: false })));
+  render(<AdminUsersPage />);
+  expect(await screen.findByRole("heading", { name: "Иванова Анна" })).toBeTruthy();
+  expect(screen.queryByRole("table")).toBeNull();
+  expect(screen.getByText("Супер-администратор")).toBeTruthy();
+  expect(screen.getByText("Технический администратор")).toBeTruthy();
+  expect(screen.getByText("Заказчик")).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "super.admin" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Восстановить пользователя super.admin" }));
+  const modal = screen.getByRole("dialog", { name: "Восстановление доступа" });
+  expect(modal.textContent).toContain("super.admin");
+  fireEvent.click(screen.getByRole("button", { name: "Отмена" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});

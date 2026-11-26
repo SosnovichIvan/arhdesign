@@ -17,6 +17,7 @@ import (
 
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/account"
 	accountgenerated "github.com/SosnovichIvan/arhdesign/apps/api/internal/accountapi/generated"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/chatimage"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/globalchat"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/preferences"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/project"
@@ -30,6 +31,7 @@ type AccountEndpoint struct {
 	projects      *project.Service
 	preferences   *preferences.Service
 	globalChats   *globalchat.Service
+	chatImages    *chatimage.Service
 	technical     *technicalsupport.Service
 	publicOrigin  string
 	secureCookies bool
@@ -45,6 +47,10 @@ func (endpoint *AccountEndpoint) ConfigurePreferences(service *preferences.Servi
 
 func (endpoint *AccountEndpoint) ConfigureGlobalChats(service *globalchat.Service) {
 	endpoint.globalChats = service
+}
+
+func (endpoint *AccountEndpoint) ConfigureChatImages(service *chatimage.Service) {
+	endpoint.chatImages = service
 }
 
 func (endpoint *AccountEndpoint) ConfigureTechnicalSupport(service *technicalsupport.Service) {

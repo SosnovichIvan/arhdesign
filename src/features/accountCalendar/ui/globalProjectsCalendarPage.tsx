@@ -1,5 +1,6 @@
 "use client";
 
+import { useNarrowWorkspace } from "@/shared/lib/useNarrowWorkspace";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -29,16 +30,15 @@ export function GlobalProjectsCalendarPage() {
   const [projectCatalog, setProjectCatalog] = useState<GlobalCalendarProject[]>([]);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [eventFilter, setEventFilter] = useState<EventFilter>("all");
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("timeline");
+  const narrow = useNarrowWorkspace();
+  const [preferredDisplayMode, setDisplayMode] = useState<DisplayMode | null>(null);
+  const displayMode = preferredDisplayMode ?? (narrow ? "list" : "timeline");
   const [filterOpen, setFilterOpen] = useState(false);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const range = useMemo(() => ({ start: anchor, end: addMonths(anchor, 4) }), [anchor]);
 
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px)").matches) queueMicrotask(() => setDisplayMode("list"));
-  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,12 +84,12 @@ export function GlobalProjectsCalendarPage() {
           <IconButton aria-label="Фильтр проектов" className="border-icon-button-border bg-icon-button text-icon-button-text hover:border-action hover:bg-icon-button-hover" data-cy="global-calendar-project-filter" onClick={() => setFilterOpen(true)} tooltip="Фильтр проектов"><FilterIcon /></IconButton>
           {selectedProjectIds.length > 0 ? <span aria-label={`Применено фильтров проектов: ${selectedProjectIds.length}`} className="absolute -right-1 -top-1 min-w-5 rounded-full bg-action px-1 text-center text-[11px] font-semibold leading-5 text-inverse-text">{selectedProjectIds.length}</span> : null}
         </span>
-        <IconButton aria-label={displayMode === "timeline" ? "Показать календарь списком" : "Показать временную шкалу"} className="border-icon-button-border bg-icon-button text-icon-button-text hover:border-action hover:bg-icon-button-hover" data-cy="global-calendar-display-toggle" onClick={() => setDisplayMode((value) => value === "timeline" ? "list" : "timeline")} tooltip={displayMode === "timeline" ? "Показать списком" : "Показать шкалой"}>{displayMode === "timeline" ? <ListIcon /> : <TimelineIcon />}</IconButton>
+        <IconButton aria-label={displayMode === "timeline" ? "Показать календарь списком" : "Показать временную шкалу"} className="border-icon-button-border bg-icon-button text-icon-button-text hover:border-action hover:bg-icon-button-hover" data-cy="global-calendar-display-toggle" onClick={() => setDisplayMode(displayMode === "timeline" ? "list" : "timeline")} tooltip={displayMode === "timeline" ? "Показать списком" : "Показать шкалой"}>{displayMode === "timeline" ? <ListIcon /> : <TimelineIcon />}</IconButton>
       </div>
     </div>
 
     {state === "loading" ? <CalendarSkeleton /> : null}
-    {state === "error" ? <div className="mt-5 border border-red-700/40 bg-surface p-5" role="alert"><p className="text-sm text-red-700">{error}</p><Button className="mt-4" onClick={() => setReloadKey((value) => value + 1)} variant="secondary">Повторить</Button></div> : null}
+    {state === "error" ? <div className="mt-5 border border-danger/40 bg-surface p-5" role="alert"><p className="text-sm text-danger">{error}</p><Button className="mt-4" onClick={() => setReloadKey((value) => value + 1)} variant="secondary">Повторить</Button></div> : null}
     {state === "ready" && feed ? <>
       {feed.hasMoreProjects || feed.truncatedEvents ? <p className="mt-4 border border-action/40 bg-action/10 px-4 py-3 text-sm" role="status">Показана часть календаря. Уточните период или выберите проекты в фильтре.</p> : null}
       {visibleProjects.length === 0 ? <EmptyCalendar filtered={selectedProjectIds.length > 0} onReset={() => setSelectedProjectIds([])} /> : displayMode === "timeline" ? <ProjectTimeline projects={visibleProjects} range={range} /> : <ProjectAgenda projects={visibleProjects} />}

@@ -165,7 +165,7 @@ func (endpoint *AccountEndpoint) globalChatActor(w http.ResponseWriter, r *http.
 	if !ok {
 		return globalchat.Actor{}, false
 	}
-	return globalchat.Actor{UserID: view.ID, Privileged: view.IsGlobalAdministrator(), Login: view.Login, FirstName: view.FirstName}, true
+	return globalchat.Actor{UserID: view.ID, Login: view.Login, FirstName: view.FirstName}, true
 }
 
 func (endpoint *AccountEndpoint) writeGlobalChatError(w http.ResponseWriter, err error, requestID string) {

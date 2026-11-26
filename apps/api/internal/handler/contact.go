@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -136,11 +137,33 @@ func requestSourceURL(r *http.Request) string {
 
 func isValidRequest(request ContactRequest) bool {
 	return between(strings.TrimSpace(request.Name), 2, 100) &&
-		between(strings.TrimSpace(request.Contact), 5, 254) &&
+		validContact(strings.TrimSpace(request.Contact)) &&
 		between(strings.TrimSpace(request.ProjectType), 2, 120) &&
 		between(strings.TrimSpace(optionalString(request.ProjectDetails)), 0, 5000) &&
 		bool(request.Consent) &&
 		(request.Website == nil || *request.Website == "")
+}
+
+var contactEmailPattern = regexp.MustCompile(`^[^@<>[:space:]]+@[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$`)
+var contactPhonePattern = regexp.MustCompile(`^\+?[0-9() .-]+$`)
+
+func validContact(value string) bool {
+	if !between(value, 5, 254) {
+		return false
+	}
+	if contactEmailPattern.MatchString(value) {
+		return true
+	}
+	if !contactPhonePattern.MatchString(value) {
+		return false
+	}
+	digits := 0
+	for _, character := range value {
+		if character >= '0' && character <= '9' {
+			digits++
+		}
+	}
+	return digits >= 10 && digits <= 15
 }
 
 func optionalString(value *string) string {

@@ -4,16 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { focusField } from "@/shared/lib/focusField";
 import { Button, DatePicker, Input, Select, Textarea } from "@/shared/ui";
 
 import { createProject, ProjectApiError } from "../api/projects";
 
-const projectTypes = [
-  { label: "Дизайн интерьера", value: "interior_design" },
-  { label: "Архитектурный проект", value: "architecture" },
-  { label: "Авторский надзор", value: "supervision" },
-  { label: "Комплектация", value: "procurement" },
-] as const;
+import { projectTypes } from "../model/projectTypes";
 
 export function CreateProjectForm() {
   const router = useRouter();
@@ -33,9 +29,11 @@ export function CreateProjectForm() {
     setError("");
     if (name.trim().length < 2) {
       setError("Укажите название проекта — минимум 2 символа");
+      focusField(event.currentTarget, "#project-name");
       return;
     }
     if (dateError) {
+      focusField(event.currentTarget, '[data-cy="project-finish"]');
       return;
     }
     setIsPending(true);
@@ -74,7 +72,7 @@ export function CreateProjectForm() {
       </div>
 
       <div className="mt-9 grid gap-x-8 gap-y-7 tablet:grid-cols-2">
-        <label className="grid gap-2 text-sm font-medium">Название проекта *<Input aria-invalid={Boolean(error && name.trim().length < 2)} autoFocus data-cy="project-name" maxLength={200} onChange={(event) => setName(event.target.value)} placeholder="Например, Квартира на Полянке" required value={name} /></label>
+        <div className="grid gap-2 text-sm font-medium"><label htmlFor="project-name">Название проекта *</label><Input aria-describedby={error && name.trim().length < 2 ? "project-name-error" : undefined} aria-invalid={Boolean(error && name.trim().length < 2)} autoFocus id="project-name" data-cy="project-name" maxLength={200} onChange={(event) => setName(event.target.value)} placeholder="Например, Квартира на Полянке" required value={name} />{error && name.trim().length < 2 ? <p className="text-sm text-danger" data-cy="project-form-error" id="project-name-error" role="alert">{error}</p> : null}</div>
         <Select dataCy="project-type" label="Тип проекта" onValueChange={setType} options={projectTypes} required value={type} />
         <label className="grid gap-2 text-sm font-medium tablet:col-span-2">Адрес<Input data-cy="project-address" maxLength={500} onChange={(event) => setAddress(event.target.value)} placeholder="Город, улица, дом" value={address} /></label>
         <DatePicker dataCy="project-start" label="Планируемое начало" onValueChange={setStart} value={start} />
@@ -84,7 +82,7 @@ export function CreateProjectForm() {
 
       <label className="mt-8 flex cursor-pointer items-start gap-3 border border-border bg-surface p-5 text-sm"><input checked={autoApprove} className="mt-0.5 size-4 shrink-0 accent-action" data-cy="project-auto-approve" onChange={(event) => setAutoApprove(event.target.checked)} type="checkbox" /><span><strong className="block text-primary">Автосогласование расходов</strong><span className="mt-1 block leading-6 text-secondary">Новые расходы будут согласованы автоматически. Настройку можно изменить в финансах проекта.</span></span></label>
 
-      {error ? <p className="mt-6 text-sm text-red-700" data-cy="project-form-error" role="alert">{error}</p> : null}
+      {error && name.trim().length >= 2 ? <p className="mt-6 text-sm text-danger" data-cy="project-form-error" role="alert">{error}</p> : null}
       <div className="mt-8 flex flex-wrap gap-3"><Button data-cy="project-submit" disabled={isPending} type="submit">{isPending ? "Создаём…" : "Создать проект"}</Button><Link className="inline-flex min-h-11 items-center rounded-full border border-border px-5 text-sm font-medium hover:bg-surface" href="/account">Отмена</Link></div>
     </form>
   );

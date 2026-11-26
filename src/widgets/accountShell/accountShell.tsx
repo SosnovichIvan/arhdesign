@@ -34,6 +34,8 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname() ?? "";
 	const router = useRouter();
   const [projectCount, setProjectCount] = useState(0);
+  const [profileInitial, setProfileInitial] = useState("");
+  const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 	const [isGlobalAdministrator, setIsGlobalAdministrator] = useState(false);
 	const [accountAuthorized, setAccountAuthorized] = useState(false);
@@ -46,6 +48,7 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
 		const controller = new AbortController();
 		void loadCurrentAccount(controller.signal).then((account) => {
 			setIsGlobalAdministrator(account.globalRole === "super_admin" || account.globalRole === "technical_admin");
+			setProfileInitial((account.firstName || account.login || "").trim().slice(0, 1).toLocaleUpperCase("ru-RU"));
 			setAccountAuthorized(true);
 		}).catch((reason: unknown) => {
 			if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -63,7 +66,11 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
 				router.replace("/?auth=login");
 				return;
 			}
-			setAuthorizedPath(pathname);
+			if (response.ok && projectId) {
+        const project = await response.json() as { name?: string };
+        if (!controller.signal.aborted && project.name) setActiveProject({ id: projectId, name: project.name });
+      }
+      if (!controller.signal.aborted) setAuthorizedPath(pathname);
 		}).catch((reason: unknown) => {
 			if (!(reason instanceof DOMException && reason.name === "AbortError")) setAuthorizedPath(pathname);
 		});
@@ -98,46 +105,63 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
             <Link aria-label="Личный кабинет — проекты" className="mr-auto inline-flex items-center gap-3 text-sm font-semibold tracking-[0.08em]" href="/account"><Image alt="" aria-hidden="true" className="size-8 rounded-md" height={32} src="/icon.svg" width={32} /><span className="hidden tablet:inline">ПОЛИСМАКОВА С.</span></Link>
             <div className="tablet:hidden"><ThemeToggle /></div>
           </div>
-		  {projectRoute ? <ProjectNavigation pathname={pathname} projectId={projectRoute.projectId} /> : <GlobalNavigation isGlobalAdministrator={isGlobalAdministrator} pathname={pathname} projectCount={projectCount} />}
+		  {projectRoute ? <ProjectNavigation key={projectRoute.projectId} pathname={pathname} projectId={projectRoute.projectId} projectName={activeProject?.id === projectRoute.projectId ? activeProject.name : undefined} /> : <GlobalNavigation isGlobalAdministrator={isGlobalAdministrator} pathname={pathname} projectCount={projectCount} />}
           <div className="mt-auto hidden border-t border-border p-4 tablet:block">
             <button className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm text-secondary hover:bg-page hover:text-primary" disabled={isLoggingOut} onClick={() => void logout()} type="button"><ExitIcon />{isLoggingOut ? "Выходим…" : "Выйти"}</button>
           </div>
         </aside>
         <div className="min-w-0">
-          <header className="flex min-h-[72px] items-center justify-end gap-3 border-b border-border px-5 tablet:px-8"><span className="mr-auto text-sm text-secondary">Рабочее пространство</span><div className="hidden tablet:block"><ThemeToggle /></div><AccountNotificationCenter /><button aria-label="Выйти из личного кабинета" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-border px-4 text-sm hover:bg-surface tablet:hidden" disabled={isLoggingOut} onClick={() => void logout()} type="button"><ExitIcon /> Выйти</button><Link aria-label="Настройки профиля" className="inline-flex size-10 items-center justify-center rounded-full bg-action font-display text-lg text-inverse-text" href="/account/profile">С</Link></header>
+          <header className="flex min-h-[64px] items-center justify-end gap-2 border-b border-border px-4 tablet:min-h-[72px] tablet:gap-3 tablet:px-8">
+            <span className="mr-auto hidden text-sm text-secondary tablet:block">Рабочее пространство</span>
+            <div className="hidden tablet:block"><ThemeToggle /></div>
+            {isAuthorized ? <TechnicalSupportWidget /> : null}
+            <AccountNotificationCenter />
+            <button aria-label="Выйти из личного кабинета" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-sm hover:bg-surface tablet:hidden" disabled={isLoggingOut} onClick={() => void logout()} type="button"><ExitIcon /> Выйти</button>
+            <Link aria-label="Настройки профиля" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-action font-display text-lg text-inverse-text" href="/account/profile">{profileInitial || <UsersIcon />}</Link>
+          </header>
 		  <main className="px-5 py-9 tablet:px-8 tablet:py-12 desktop:px-12"><div className="mx-auto max-w-[1280px]">{isAuthorized ? children : <div aria-label="Проверка доступа" className="h-72 animate-pulse border border-border bg-surface" role="status"><span className="sr-only">Проверяем доступ…</span></div>}</div></main>
         </div>
       </div>
-      {isAuthorized ? <TechnicalSupportWidget /> : null}
     </NavigationContext.Provider>
   );
 }
 
 function GlobalNavigation({ isGlobalAdministrator, pathname, projectCount }: Readonly<{ isGlobalAdministrator: boolean; pathname: string; projectCount: number }>) {
-  return <nav aria-label="Основные разделы" className="flex gap-2 overflow-x-auto p-3 tablet:min-h-0 tablet:flex-1 tablet:flex-col tablet:gap-1 tablet:overflow-y-auto tablet:p-4">
+  return <nav aria-label="Основные разделы" className="grid grid-cols-2 gap-1 p-3 tablet:flex tablet:min-h-0 tablet:flex-1 tablet:flex-col tablet:overflow-y-auto tablet:p-4">
 	{navigation.map((item) => {
 	  if ("globalOnly" in item && item.globalOnly && !isGlobalAdministrator) return null;
 	  const { href, label, icon: Icon } = item;
       const isActive = href === "/account" ? pathname === href || pathname === "/account/projects/new" : pathname.startsWith(href);
-      return <Link aria-current={isActive ? "page" : undefined} className={`flex min-h-11 shrink-0 items-center gap-3 rounded-sm px-4 text-sm font-medium transition-colors ${isActive ? "bg-primary text-inverse-text" : "text-secondary hover:bg-page hover:text-primary"}`} data-cy={`account-nav-${label.toLocaleLowerCase("ru")}`} href={href} key={href}><Icon /><span>{label}</span>{label === "Проекты" && projectCount > 0 ? <span className={`ml-auto min-w-6 rounded-full px-2 py-0.5 text-center text-xs ${isActive ? "bg-page text-primary" : "bg-action text-inverse-text"}`}>{projectCount}</span> : null}</Link>;
+      return <Link aria-current={isActive ? "page" : undefined} className={`flex min-h-11 min-w-0 items-center gap-2 rounded-sm px-2 text-sm tablet:gap-3 tablet:px-4 font-medium transition-colors ${isActive ? "bg-primary text-inverse-text" : "text-secondary hover:bg-page hover:text-primary"}`} data-cy={`account-nav-${label.toLocaleLowerCase("ru")}`} href={href} key={href}><Icon /><span>{label}</span>{label === "Проекты" && projectCount > 0 ? <span className={`ml-auto min-w-6 rounded-full px-2 py-0.5 text-center text-xs ${isActive ? "bg-page text-primary" : "bg-action text-inverse-text"}`}>{projectCount}</span> : null}</Link>;
     })}
   </nav>;
 }
 
-function ProjectNavigation({ pathname, projectId }: Readonly<{ pathname: string; projectId: string }>) {
+function ProjectNavigation({ pathname, projectId, projectName }: Readonly<{ pathname: string; projectId: string; projectName?: string }>) {
+  const [expanded, setExpanded] = useState(false);
   const baseHref = `/account/projects/${encodeURIComponent(projectId)}`;
-  return <div className="min-w-0 px-4 pb-4 pt-4 tablet:flex tablet:min-h-0 tablet:flex-1 tablet:flex-col tablet:overflow-hidden">
-    <Link className="flex min-h-[38px] items-center rounded-md bg-action px-3 text-xs font-semibold text-inverse-text transition-colors hover:bg-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action" data-cy="back-to-projects" href="/account"><span aria-hidden="true">←</span><span className="ml-2">Назад к проектам</span></Link>
-    <nav aria-label="Разделы проекта" className="mt-2 grid grid-cols-2 gap-1 min-[40rem]:grid-cols-3 tablet:flex tablet:min-h-0 tablet:flex-1 tablet:flex-col tablet:overflow-y-auto tablet:pr-1">
-      {projectNavigation.map(({ label, segment }) => {
-        const href = segment ? `${baseHref}/${segment}` : baseHref;
-        const isActive = segment ? pathname === href || pathname.startsWith(`${href}/`) : pathname === baseHref;
-        const isAvailable = segment === "" || segment === "tasks" || segment === "calendar" || segment === "materials" || segment === "finances" || segment === "documents" || segment === "chat";
-        const classes = `flex min-h-[38px] min-w-0 items-center px-3 text-xs transition-colors tablet:min-h-[42px] tablet:text-sm ${isActive ? "bg-action/30 font-semibold text-primary" : "text-secondary"}`;
-        return isAvailable ? <Link aria-current={isActive ? "page" : undefined} className={`${classes} hover:bg-page hover:text-primary`} data-cy={`project-nav-${segment || "summary"}`} href={href} key={label}>{label}</Link> : <span aria-disabled="true" className={`${classes} cursor-not-allowed opacity-75`} data-cy={`project-nav-${segment}`} key={label} title="Раздел будет доступен в одном из следующих релизов">{label}</span>;
-      })}
-    </nav>
-  </div>;
+  const activeSection = projectNavigation.find(({ segment }) => segment && pathname.startsWith(`${baseHref}/${segment}`))?.label ?? "Сводка";
+
+  return (
+    <div className="min-w-0 px-4 py-3 tablet:flex tablet:min-h-0 tablet:flex-1 tablet:flex-col tablet:overflow-hidden tablet:py-4">
+      <Link className="flex min-h-[38px] items-center rounded-md bg-action px-3 text-xs font-semibold text-inverse-text hover:bg-primary" data-cy="back-to-projects" href="/account">← Назад к проектам</Link>
+      <div className="mt-2 tablet:hidden">
+        {projectName ? <p className="wrap-anywhere px-2 text-sm font-medium">{projectName}</p> : null}
+        <button aria-controls="project-navigation" aria-expanded={expanded} className="mt-1 flex min-h-11 w-full items-center justify-between gap-2 border border-border px-3 text-left text-sm" onClick={() => setExpanded(!expanded)} type="button">
+          <span>{activeSection}</span><span aria-hidden="true">{expanded ? "▴" : "▾"}</span>
+          <span className="sr-only">, разделы проекта</span>
+        </button>
+      </div>
+      <nav aria-label="Разделы проекта" className={`${expanded ? "grid" : "hidden"} mt-2 grid-cols-2 gap-1 tablet:flex tablet:min-h-0 tablet:flex-1 tablet:flex-col tablet:overflow-y-auto tablet:pr-1`} id="project-navigation">
+        {projectNavigation.map(({ label, segment }) => {
+          const href = segment ? `${baseHref}/${segment}` : baseHref;
+          const isActive = segment ? pathname === href || pathname.startsWith(`${href}/`) : pathname === href;
+          const tone = isActive ? "bg-action/30 font-semibold text-primary" : "text-secondary";
+          return <Link aria-current={isActive ? "page" : undefined} className={`flex min-h-11 min-w-0 items-center px-3 text-xs hover:bg-page hover:text-primary tablet:text-sm ${tone}`} data-cy={`project-nav-${segment || "summary"}`} href={href} key={label} onClick={() => setExpanded(false)}>{label}</Link>;
+        })}
+      </nav>
+    </div>
+  );
 }
 
 function getProjectWorkspaceRoute(pathname: string) {

@@ -87,7 +87,7 @@ describe("AccountShell", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "project-1", name: "Дом в Миллениум Парк" }), { headers: { "Content-Type": "application/json" }, status: 200 })));
     render(<AccountShell><span>Сводка проекта</span></AccountShell>);
     expect(await screen.findByText("Сводка проекта")).toBeTruthy();
-    expect(screen.queryByText("Дом в Миллениум Парк")).toBeNull();
+    expect(screen.getByText("Дом в Миллениум Парк")).toBeTruthy();
     expect(screen.queryByText("ПРОЕКТ")).toBeNull();
     expect(screen.getByRole("navigation", { name: "Разделы проекта" }).textContent).toContain("Финансы проекта");
     expect(screen.getByRole("navigation", { name: "Разделы проекта" }).className).toContain("grid-cols-2");

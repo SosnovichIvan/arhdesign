@@ -29,6 +29,7 @@ func (repository *Postgres) ListProjectChats(ctx context.Context, actor project.
 		FROM chats chat
 		WHERE chat.project_id=$1 AND chat.archived_at IS NULL
 		  AND ($3 OR EXISTS (SELECT 1 FROM chat_memberships member WHERE member.chat_id=chat.id AND member.user_id=$2 AND member.removed_at IS NULL))
+		  AND ($3 OR EXISTS (SELECT 1 FROM project_memberships membership WHERE membership.project_id=chat.project_id AND membership.user_id=$2 AND membership.revoked_at IS NULL))
 		ORDER BY chat.created_at,chat.id
 	`, projectID, actor.UserID, actor.SuperAdmin)
 	if err != nil {
@@ -43,9 +44,13 @@ func (repository *Postgres) ListProjectChats(ctx context.Context, actor project.
 		}
 		if value.ContextType != nil && value.ContextID != nil {
 			title, titleErr := contextEntityTitle(ctx, repository.pool, actor, projectID, *value.ContextType, *value.ContextID)
-			if titleErr == nil {
-				value.ContextTitle = &title
+			if errors.Is(titleErr, project.ErrNotFound) || errors.Is(titleErr, project.ErrForbidden) {
+				continue
 			}
+			if titleErr != nil {
+				return project.ChatList{}, titleErr
+			}
+			value.ContextTitle = &title
 		}
 		items = append(items, value)
 	}
@@ -292,10 +297,7 @@ func (repository *Postgres) MarkProjectChatRead(ctx context.Context, command pro
 	if err != nil {
 		return mapProjectWriteError("mark project chat read", err)
 	}
-	if tag.RowsAffected() == 0 {
-		if command.SuperAdmin {
-			return nil
-		}
+	if tag.RowsAffected() == 0 && !command.SuperAdmin {
 		return project.ErrNotFound
 	}
 	return nil
@@ -349,6 +351,9 @@ func (repository *Postgres) MarkAllAccountNotificationsRead(ctx context.Context,
 }
 
 func chatManagementAccess(ctx context.Context, q projectAccessQuerier, actor project.Actor, projectID, chatID string) (bool, error) {
+	if _, _, err := authorizeContextChat(ctx, q, actor, projectID, chatID); err != nil {
+		return false, err
+	}
 	var canManage bool
 	err := q.QueryRow(ctx, `SELECT $3 OR chat.created_by_user_id=$2 OR EXISTS(SELECT 1 FROM project_memberships WHERE project_id=chat.project_id AND user_id=$2 AND project_role='project_admin' AND revoked_at IS NULL) FROM chats chat WHERE chat.id=$1 AND chat.project_id=$4 AND chat.archived_at IS NULL AND ($3 OR EXISTS(SELECT 1 FROM chat_memberships WHERE chat_id=chat.id AND user_id=$2 AND removed_at IS NULL))`, chatID, actor.UserID, actor.SuperAdmin, projectID).Scan(&canManage)
 	if errors.Is(err, pgx.ErrNoRows) {

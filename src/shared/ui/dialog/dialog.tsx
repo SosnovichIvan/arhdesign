@@ -13,9 +13,10 @@ type DialogProps = {
   className?: string;
   closeLabel?: string;
   closeButtonClassName?: string;
+  contentClassName?: string;
 };
 
-export function Dialog({ children, className, closeButtonClassName, closeLabel = "Закрыть форму", isOpen, label, onClose }: DialogProps) {
+export function Dialog({ children, className, closeButtonClassName, contentClassName, closeLabel = "Закрыть форму", isOpen, label, onClose }: DialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -32,7 +33,8 @@ export function Dialog({ children, className, closeButtonClassName, closeLabel =
     document.body.style.overflow = "hidden";
     (dialogRef.current?.querySelector<HTMLElement>("[data-dialog-initial-focus]") ?? closeButtonRef.current)?.focus();
     function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") onCloseRef.current();
+      const targetDialog = document.activeElement?.closest('[role="dialog"]');
+      if (event.key === "Escape" && !event.defaultPrevented && !dialogRef.current?.querySelector('[role="dialog"]') && (!targetDialog || targetDialog === dialogRef.current)) onCloseRef.current();
     }
     document.addEventListener("keydown", handleEscape);
     return () => {
@@ -44,7 +46,8 @@ export function Dialog({ children, className, closeButtonClassName, closeLabel =
 
   function handleTabKey(event: KeyboardEvent<HTMLElement>) {
     if (event.key !== "Tab") return;
-    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]):not([tabindex='-1']), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex='-1'])");
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]") ?? [])
+      .filter((element) => element.tabIndex >= 0 && !element.closest("[hidden], .hidden, [inert]"));
     if (!focusable?.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
@@ -63,9 +66,13 @@ export function Dialog({ children, className, closeButtonClassName, closeLabel =
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-overlay p-4 backdrop-blur-[2px] tablet:p-7" data-dialog-overlay onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
-      <section aria-label={label} aria-modal="true" className={cn("relative max-h-full w-full max-w-[640px] overflow-y-auto border border-border bg-surface p-6 shadow-surface tablet:p-12", className)} onKeyDown={handleTabKey} onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog">
-        <IconButton aria-label={closeLabel} className={cn("absolute right-4 top-4 z-10 text-secondary tablet:right-6 tablet:top-6", closeButtonClassName)} onClick={onClose} ref={closeButtonRef}>×</IconButton>
-        {children}
+      <section aria-label={label} aria-modal="true" className={cn("relative flex max-h-full w-full max-w-[640px] flex-col overflow-hidden border border-border bg-surface shadow-surface", className)} onKeyDown={handleTabKey} onMouseDown={(event) => event.stopPropagation()} ref={dialogRef} role="dialog">
+        <div className="flex shrink-0 justify-end px-4 pt-3 pb-1 tablet:px-6">
+          <IconButton aria-label={closeLabel} className={cn("shrink-0 text-secondary", closeButtonClassName)} onClick={onClose} ref={closeButtonRef}>×</IconButton>
+        </div>
+        <div className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 tablet:px-12 tablet:pb-12", contentClassName)}>
+          {children}
+        </div>
       </section>
     </div>
   );

@@ -113,6 +113,12 @@ jobs:
         with:
           go-version: "1.26.11"
           cache-dependency-path: apps/api/go.sum
+      - name: Verify PostgreSQL migration history and chat access on redeploy
+        working-directory: .
+        run: |
+          docker run --rm --network host --volume "$PWD:/workspace:ro" \
+            --env PGHOST=127.0.0.1 --env PGUSER=arhdesign --env PGPASSWORD=test-password \
+            --entrypoint sh postgres:17-alpine /workspace/infra/scripts/test-migrate-postgres.sh
       - run: bash ../../scripts/validate-adapters.sh api
       - run: go test -race -count=1 ./...
       - run: make test-coverage

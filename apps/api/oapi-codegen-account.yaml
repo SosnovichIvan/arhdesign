@@ -22,6 +22,11 @@ output-options:
     - getGlobalChat
     - createGlobalChatMessage
     - markGlobalChatRead
+    - listChatImages
+    - uploadChatImage
+    - viewChatImage
+    - setChatImagePin
+    - deleteChatImage
     - reportFrontendError
     - createTechnicalFeedback
     - listProjects

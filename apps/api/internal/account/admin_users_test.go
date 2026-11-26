@@ -105,7 +105,7 @@ func TestAdminUserStatusChecksAuthorizationRateLimitAndCommand(t *testing.T) {
 	if err != nil || view.Version != 4 || !store.adminCommand.Disable || store.adminCommand.ExpectedVersion != 3 || !store.adminCommand.Now.Equal(now) {
 		t.Fatalf("view=%#v command=%#v error=%v", view, store.adminCommand, err)
 	}
-	if len(store.rateLimitRequests) != 1 || store.rateLimitRequests[0].PolicyCode != "admin.user-status" {
+	if len(store.rateLimitRequests) != 1 || store.rateLimitRequests[0].PolicyCode != "admin.user_status" {
 		t.Fatalf("rate limits=%#v", store.rateLimitRequests)
 	}
 	store.rateLimitRetry = 3 * time.Second

@@ -44,6 +44,7 @@ func (repository *Postgres) ListProjectChat(ctx context.Context, query project.C
 		    SELECT 1 FROM project_memberships membership
 		    WHERE membership.project_id=chat.project_id AND membership.user_id=$3 AND membership.revoked_at IS NULL
 		  ))
+		  AND ($4::boolean OR EXISTS (SELECT 1 FROM chat_memberships membership WHERE membership.chat_id=chat.id AND membership.user_id=$3 AND membership.removed_at IS NULL))
 		  AND ($5::uuid IS NULL OR (message.created_at,message.id) < (
 		    SELECT anchor.created_at,anchor.id FROM chat_messages anchor
 		    WHERE anchor.chat_id=chat.id AND anchor.id=$5::uuid
@@ -126,7 +127,7 @@ func (repository *Postgres) CreateProjectChatMessage(ctx context.Context, comman
 		return project.ChatMessage{}, err
 	}
 	if inserted {
-		if err = enqueueProjectMemberNotification(ctx, tx, command.ProjectID, command.UserID, message.ID, command.Notification, command.Now); err != nil {
+		if err = enqueueChatMemberNotification(ctx, tx, command.ProjectID, chatID, command.UserID, message.ID, command.Notification, command.Now); err != nil {
 			return project.ChatMessage{}, err
 		}
 	}
@@ -157,7 +158,10 @@ func (repository *Postgres) OpenProjectContextChat(ctx context.Context, command 
 	`, command.ProjectID, command.ContextType, command.ContextID, command.Name, command.UserID, command.Now).Scan(&chatID, &storedName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		inserted = false
-		err = tx.QueryRow(ctx, `SELECT id::text,name FROM chats WHERE project_id=$1 AND kind='context' AND context_type=$2 AND context_id=$3 AND archived_at IS NULL`, command.ProjectID, command.ContextType, command.ContextID).Scan(&chatID, &storedName)
+		err = tx.QueryRow(ctx, `SELECT id::text,name FROM chats WHERE project_id=$1 AND kind='context' AND context_type=$2 AND context_id=$3 AND archived_at IS NULL AND ($5 OR EXISTS (SELECT 1 FROM chat_memberships member WHERE member.chat_id=chats.id AND member.user_id=$4 AND member.removed_at IS NULL))`, command.ProjectID, command.ContextType, command.ContextID, command.UserID, command.SuperAdmin).Scan(&chatID, &storedName)
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return project.ChatContext{}, project.ErrNotFound
 	}
 	if err != nil {
 		return project.ChatContext{}, mapProjectWriteError("open context chat", err)
@@ -168,6 +172,7 @@ func (repository *Postgres) OpenProjectContextChat(ctx context.Context, command 
 			SELECT $1,$2,membership.user_id,$3,$4
 			FROM project_memberships membership
 			WHERE membership.project_id=$2 AND membership.revoked_at IS NULL
+			UNION SELECT $1::uuid,$2::uuid,$3::uuid,$3::uuid,$4::timestamptz
 			ON CONFLICT (chat_id,user_id) WHERE removed_at IS NULL DO NOTHING
 		`, chatID, command.ProjectID, command.UserID, command.Now); err != nil {
 			return project.ChatContext{}, mapProjectWriteError("seed context chat members", err)
@@ -259,6 +264,7 @@ func authorizeContextChat(ctx context.Context, querier projectAccessQuerier, act
 		SELECT id::text,project_id::text,kind,context_type,context_id::text,name
 		FROM chats
 		WHERE id=$1 AND project_id=$2 AND archived_at IS NULL
+		  AND EXISTS (SELECT 1 FROM projects WHERE id=chats.project_id AND archived_at IS NULL)
 		  AND ($4 OR (
 		    EXISTS (SELECT 1 FROM project_memberships WHERE project_id=chats.project_id AND user_id=$3 AND revoked_at IS NULL)
 		    AND EXISTS (SELECT 1 FROM chat_memberships WHERE chat_id=chats.id AND user_id=$3 AND removed_at IS NULL)

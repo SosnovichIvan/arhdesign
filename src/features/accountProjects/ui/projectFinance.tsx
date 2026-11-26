@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
+import { focusField } from "@/shared/lib/focusField";
 import { Button, DatePicker, Dialog, IconButton, Input, Select, Textarea } from "@/shared/ui";
 
 import { createProjectExpense, loadProjectFinanceSummary } from "../api/projects";
@@ -49,7 +50,7 @@ export function ProjectFinance({ autoApproveExpenses, projectId }: Readonly<{ au
       </div>
     </header>
     {state === "loading" ? <div aria-label="Загрузка финансовой сводки" className="mt-6 h-20 animate-pulse bg-page" role="status" /> : null}
-    {state === "error" ? <div className="mt-6 border border-red-700/40 p-4" role="alert"><p className="text-sm text-red-700">{error}</p><Button className="mt-4" onClick={() => void refresh()} variant="secondary">Повторить</Button></div> : null}
+    {state === "error" ? <div className="mt-6 border border-danger/40 p-4" role="alert"><p className="text-sm text-danger">{error}</p><Button className="mt-4" onClick={() => void refresh()} variant="secondary">Повторить</Button></div> : null}
     {state === "ready" && summary ? <><div className="mt-6 grid gap-6 tablet:grid-cols-2 desktop:grid-cols-4"><FinanceMetric label="Поступления заказчика" value={formatMoney(summary.confirmedIncomeMinor, summary.currencyCode)} /><FinanceMetric label="Подтверждённые расходы" value={formatMoney(summary.confirmedExpenseMinor, summary.currencyCode)} /><FinanceMetric label="Остаток средств" value={formatMoney(summary.availableBalanceMinor, summary.currencyCode)} /><FinanceMetric label="Расходы в работе" value={formatMoney(summary.pendingExpenseMinor, summary.currencyCode)} /></div><p className="mt-6 border-t border-border pt-4 text-xs leading-5 text-secondary">Новые расходы не уменьшают остаток до подтверждения фактической оплаты.</p></> : null}
     {notice ? <p className="mt-4 text-sm text-action" role="status">{notice}</p> : null}
     <Dialog isOpen={formOpen} label="Добавление расхода" onClose={() => setFormOpen(false)}><ExpenseForm autoApproveExpenses={autoApproveExpenses} onCancel={() => setFormOpen(false)} onCreated={(expense) => { setFormOpen(false); setNotice(expense.status === "auto_approved" ? "Расход добавлен и автосогласован. Он ожидает оплаты." : "Расход добавлен и ожидает согласования."); void refresh(); }} projectId={projectId} /></Dialog>
@@ -62,6 +63,7 @@ export function ExpenseForm({ autoApproveExpenses, onCancel, onCreated, projectI
   const [description, setDescription] = useState("");
   const [vendor, setVendor] = useState("");
   const [plannedPaymentOn, setPlannedPaymentOn] = useState("");
+  const [invalid, setInvalid] = useState<{ field: "amount" | "description"; message: string } | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const errorRef = useRef<HTMLDivElement>(null);
@@ -69,11 +71,11 @@ export function ExpenseForm({ autoApproveExpenses, onCancel, onCreated, projectI
 
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setError("");
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError(""); setInvalid(null);
     const amountMinor = parseMoney(amount);
-    if (amountMinor === null) { setError("Укажите сумму больше нуля, не более двух знаков после запятой"); return; }
-    if (description.trim().length < 2) { setError("Добавьте описание расхода — минимум 2 символа"); return; }
+    if (amountMinor === null) { setInvalid({ field: "amount", message: "Укажите сумму больше нуля, не более двух знаков после запятой" }); focusField(event.currentTarget, "#expense-amount"); return; }
+    if (description.trim().length < 2) { setInvalid({ field: "description", message: "Добавьте описание расхода — минимум 2 символа" }); focusField(event.currentTarget, "#expense-description"); return; }
     idempotencyKey.current ??= createIdempotencyKey();
     setPending(true);
     try {
@@ -86,11 +88,11 @@ export function ExpenseForm({ autoApproveExpenses, onCancel, onCreated, projectI
   return <form data-cy="create-expense-form" noValidate onSubmit={submit}>
     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Финансы проекта</p><h2 className="mt-3 font-display text-5xl">Новый расход</h2>
     <p className="mt-4 text-sm leading-6 text-secondary">{autoApproveExpenses ? "В проекте включено автосогласование: запрос сразу перейдёт к ожиданию оплаты." : "После создания запрос будет ожидать согласования заказчиком или администратором."}</p>
-    {error ? <div className="mt-5 border border-red-700/40 p-3 text-sm text-red-700" ref={errorRef} role="alert" tabIndex={-1}>{error}</div> : null}
+    {error ? <div className="mt-5 border border-danger/40 p-3 text-sm text-danger" ref={errorRef} role="alert" tabIndex={-1}>{error}</div> : null}
     <div className="mt-7 grid gap-6 tablet:grid-cols-2">
-      <label className="grid gap-2 text-sm font-medium">Сумма, ₽ *<Input autoFocus data-cy="expense-amount" inputMode="decimal" onChange={(event) => { setAmount(event.target.value); idempotencyKey.current = null; }} placeholder="0,00" value={amount} /></label>
+      <div className="grid gap-2 text-sm font-medium"><label htmlFor="expense-amount">Сумма, ₽ *</label><Input data-dialog-initial-focus aria-describedby={invalid?.field === "amount" ? "expense-amount-error" : undefined} aria-invalid={invalid?.field === "amount" || undefined} id="expense-amount" data-cy="expense-amount" inputMode="decimal" onChange={(event) => { setAmount(event.target.value); if (invalid?.field === "amount") setInvalid(null); idempotencyKey.current = null; }} placeholder="0,00" value={amount} />{invalid?.field === "amount" ? <span className="text-sm text-danger" id="expense-amount-error" role="alert">{invalid.message}</span> : null}</div>
       <Select dataCy="expense-category" label="Статья расхода" onValueChange={(value) => { setCategory(value); idempotencyKey.current = null; }} options={categories} required value={category} />
-      <label className="grid gap-2 text-sm font-medium tablet:col-span-2">Описание *<Textarea data-cy="expense-description" maxLength={2000} onChange={(event) => { setDescription(event.target.value); idempotencyKey.current = null; }} value={description} /></label>
+      <div className="grid gap-2 text-sm font-medium tablet:col-span-2"><label htmlFor="expense-description">Описание *</label><Textarea aria-describedby={invalid?.field === "description" ? "expense-description-error" : undefined} aria-invalid={invalid?.field === "description" || undefined} id="expense-description" data-cy="expense-description" maxLength={2000} onChange={(event) => { setDescription(event.target.value); if (invalid?.field === "description") setInvalid(null); idempotencyKey.current = null; }} value={description} />{invalid?.field === "description" ? <span className="text-sm text-danger" id="expense-description-error" role="alert">{invalid.message}</span> : null}</div>
       <label className="grid gap-2 text-sm font-medium">Поставщик или подрядчик<Input data-cy="expense-vendor" maxLength={200} onChange={(event) => { setVendor(event.target.value); idempotencyKey.current = null; }} value={vendor} /></label>
       <DatePicker label="Плановая дата оплаты" onValueChange={(value) => { setPlannedPaymentOn(value); idempotencyKey.current = null; }} value={plannedPaymentOn} />
     </div>
