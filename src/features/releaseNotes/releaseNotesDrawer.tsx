@@ -90,7 +90,7 @@ export function ReleaseNotesDrawer({ accountId }: Readonly<{ accountId: string }
   }
 
   return <>
-    <IconButton aria-expanded={open} aria-haspopup="dialog" aria-label="Что нового" className="min-h-11 w-auto shrink-0 gap-2 rounded-full px-3 text-secondary hover:text-primary" data-unread={unread || undefined} onClick={openDrawer} tooltip={unread ? "Есть непрочитанные обновления" : "Что нового"}>
+    <IconButton aria-expanded={open} aria-haspopup="dialog" aria-label="Что нового" className="min-h-11 w-auto shrink-0 gap-2 rounded-full px-3 text-secondary hover:text-primary" data-unread={unread || undefined} onClick={openDrawer} tooltip={unread ? "Есть непрочитанные обновления" : "Что нового"} tooltipPlacement="bottom">
       <span aria-hidden="true" className="relative">
         <svg className={cn("size-5", unread && "motion-safe:animate-[release-bell-pulse_2.4s_ease-in-out_infinite]")} fill="none" viewBox="0 0 24 24">
           <path d="M10 20h4m-2-16a5 5 0 0 0-5 5v4l-2 3h14l-2-3V9m3-6v6m-3-3h6" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" />
