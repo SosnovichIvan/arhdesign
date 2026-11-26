@@ -1,5 +1,6 @@
 "use client";
 
+import { focusField } from "@/shared/lib/focusField";
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useState, type FormEvent, type ReactNode } from "react";
 
@@ -50,7 +51,7 @@ export function AccountAuthProvider({ children }: Readonly<{ children: ReactNode
         {mode === "login" ? <LoginForm onClose={closeAuth} onForgot={() => openAuth("forgot")} onSwitchToRegister={() => openAuth("register")} /> : null}
         {mode === "register" ? <RegistrationForm onSwitchToLogin={() => openAuth("login")} /> : null}
         {mode === "forgot" ? <ForgotPasswordForm onBack={() => openAuth("login")} /> : null}
-        {mode === "reset" ? <ResetPasswordForm onComplete={() => openAuth("login")} /> : null}
+        {mode === "reset" ? <ResetPasswordForm onComplete={() => openAuth("login")} onRequestLink={() => openAuth("forgot")} /> : null}
         {mode === "verify" ? <VerifyEmailForm onComplete={() => openAuth("login")} /> : null}
       </Dialog>
     </AccountAuthContext.Provider>
@@ -72,9 +73,17 @@ function LoginForm({ onClose, onForgot, onSwitchToRegister }: Readonly<{ onClose
   const [requiresVerification, setRequiresVerification] = useState(false);
   const [error, setError] = useState("");
 
+  const [missing, setMissing] = useState<"identifier" | "password" | null>(null);
+
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    const field = !identifier.trim() ? "identifier" : !password ? "password" : null;
+    setMissing(field);
+    if (field) {
+      focusField(event.currentTarget, "#login-" + field);
+      return;
+    }
     setIsPending(true);
     try {
       const response = await fetch("/api/v1/auth/login", {
@@ -104,16 +113,16 @@ function LoginForm({ onClose, onForgot, onSwitchToRegister }: Readonly<{ onClose
   if (requiresVerification) return <VerificationPrompt identifier={identifier.trim()} onBack={() => setRequiresVerification(false)} />;
 
   return (
-    <form className="pr-10 tablet:pr-12" noValidate onSubmit={login}>
+    <form className="min-w-0" noValidate onSubmit={login}>
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Личный кабинет</p>
       <h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Войти</h2>
       <p className="mt-4 leading-7 text-secondary">Используйте логин или электронную почту, указанные при регистрации.</p>
       <div className="mt-8 space-y-6">
-        <label className="grid gap-2 text-sm font-medium">Логин или почта *<Input autoComplete="username" data-cy="login-identifier" data-dialog-initial-focus onChange={(event) => setIdentifier(event.target.value)} required value={identifier} /></label>
-        <PasswordInput autoComplete="current-password" dataCy="login-password" label="Пароль" onChange={(event) => setPassword(event.target.value)} required value={password} />
+        <div className="grid gap-2 text-sm font-medium"><label htmlFor="login-identifier">Логин или почта *</label><Input aria-describedby={missing === "identifier" ? "login-identifier-error" : undefined} aria-invalid={missing === "identifier" || undefined} autoComplete="username" data-cy="login-identifier" data-dialog-initial-focus id="login-identifier" onChange={(event) => { setMissing(null); setIdentifier(event.target.value); }} required value={identifier} />{missing === "identifier" ? <span className="text-sm text-danger" id="login-identifier-error" role="alert">Укажите логин или почту</span> : null}</div>
+        <PasswordInput autoComplete="current-password" dataCy="login-password" error={missing === "password" ? "Введите пароль" : undefined} id="login-password" label="Пароль" onChange={(event) => { setMissing(null); setPassword(event.target.value); }} required value={password} />
         <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-secondary"><input checked={rememberMe} className="size-4 accent-action" onChange={(event) => setRememberMe(event.target.checked)} type="checkbox" />Запомнить меня</label>
       </div>
-      {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-4 text-sm text-danger" role="alert">{error}</p> : null}
       <Button className="mt-7 w-full" data-cy="login-submit" disabled={isPending} type="submit">{isPending ? "Входим…" : "Войти"}</Button>
       <button className="mt-4 min-h-11 text-sm text-secondary underline decoration-action underline-offset-4 hover:text-primary" onClick={onForgot} type="button">Забыли пароль?</button>
       <p className="mt-6 text-sm text-secondary">Нет профиля? <button className="font-medium text-primary underline decoration-action underline-offset-4 hover:text-action" data-cy="auth-switch-register" onClick={onSwitchToRegister} type="button">Зарегистрироваться</button></p>
@@ -139,9 +148,9 @@ function ForgotPasswordForm({ onBack }: Readonly<{ onBack: () => void }>) {
     finally { setIsPending(false); }
   }
 
-  if (acceptedChannel) return <section aria-live="polite" className="pr-10 tablet:pr-12"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Проверьте выбранный канал</h2><p className="mt-5 leading-7 text-secondary">Если профиль существует и {acceptedChannel === "email" ? "электронная почта была подтверждена" : "Telegram был подключён заранее"}, мы отправили одноразовую ссылку для восстановления доступа. Ссылка действует 30 минут.</p><div className="mt-7 flex flex-wrap gap-3"><Button onClick={() => setAcceptedChannel(null)} type="button">Выбрать другой способ</Button><Button onClick={onBack} type="button" variant="secondary">Вернуться ко входу</Button></div></section>;
+  if (acceptedChannel) return <section aria-live="polite" className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Проверьте выбранный канал</h2><p className="mt-5 leading-7 text-secondary">Если профиль существует и {acceptedChannel === "email" ? "электронная почта была подтверждена" : "Telegram был подключён заранее"}, мы отправили одноразовую ссылку для восстановления доступа. Ссылка действует 30 минут.</p><div className="mt-7 flex flex-wrap gap-3"><Button onClick={() => setAcceptedChannel(null)} type="button">Выбрать другой способ</Button><Button onClick={onBack} type="button" variant="secondary">Вернуться ко входу</Button></div></section>;
 
-  return <form className="pr-10 tablet:pr-12" onSubmit={(event) => { event.preventDefault(); void requestRecovery("email"); }}><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Восстановить пароль</h2><p className="mt-4 leading-7 text-secondary">Укажите логин или почту и выберите способ восстановления. Ответ не раскрывает, существует ли профиль.</p><label className="mt-8 grid gap-2 text-sm font-medium">Логин или почта *<Input autoComplete="username" data-dialog-initial-focus onChange={(event) => setIdentifier(event.target.value)} required value={identifier} /></label>{error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}<div className="mt-7 grid gap-3 tablet:grid-cols-2"><Button disabled={isPending} type="submit">Получить по email</Button><Button disabled={isPending} onClick={() => void requestRecovery("telegram")} type="button" variant="secondary">Получить в Telegram</Button></div><button className="mt-5 min-h-11 text-sm text-secondary underline decoration-action underline-offset-4 hover:text-primary" onClick={onBack} type="button">Вернуться ко входу</button></form>;
+  return <form className="min-w-0" onSubmit={(event) => { event.preventDefault(); void requestRecovery("email"); }}><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Восстановить пароль</h2><p className="mt-4 leading-7 text-secondary">Укажите логин или почту и выберите способ восстановления. Ответ не раскрывает, существует ли профиль.</p><label className="mt-8 grid gap-2 text-sm font-medium">Логин или почта *<Input autoComplete="username" data-dialog-initial-focus onChange={(event) => setIdentifier(event.target.value)} required value={identifier} /></label>{error ? <p className="mt-4 text-sm text-danger" role="alert">{error}</p> : null}<div className="mt-7 grid gap-3 tablet:grid-cols-2"><Button disabled={isPending} type="submit">Получить по email</Button><Button disabled={isPending} onClick={() => void requestRecovery("telegram")} type="button" variant="secondary">Получить в Telegram</Button></div><button className="mt-5 min-h-11 text-sm text-secondary underline decoration-action underline-offset-4 hover:text-primary" onClick={onBack} type="button">Вернуться ко входу</button></form>;
 }
 
 function VerifyEmailForm({ onComplete }: Readonly<{ onComplete: () => void }>) {
@@ -170,35 +179,41 @@ function VerifyEmailForm({ onComplete }: Readonly<{ onComplete: () => void }>) {
     return () => controller.abort();
   }, [token]);
 
-  if (status === "pending") return <section aria-live="polite" className="pr-10 tablet:pr-12"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Проверяем ссылку…</h2><p className="mt-5 leading-7 text-secondary" role="status">Это займёт несколько секунд.</p></section>;
-  if (status === "success") return <section aria-live="polite" className="pr-10 tablet:pr-12"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Почта подтверждена</h2><p className="mt-5 leading-7 text-secondary">Профиль активирован. Теперь вы можете войти в личный кабинет.</p><Button className="mt-7" onClick={onComplete} type="button">Войти</Button></section>;
-  if (status === "expired") return <section aria-live="polite" className="pr-10 tablet:pr-12"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Ссылка устарела</h2><p className="mt-5 leading-7 text-secondary">Ссылка недействительна, уже использована или истекла. Войдите с логином и паролем — мы предложим запросить новое письмо или подтвердить профиль через Telegram.</p><Button className="mt-7" onClick={onComplete} type="button">Вернуться ко входу</Button></section>;
-  return <section aria-live="polite" className="pr-10 tablet:pr-12"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Не удалось проверить ссылку</h2><p className="mt-5 leading-7 text-secondary" role="alert">{error}</p><Button className="mt-7" onClick={onComplete} type="button" variant="secondary">Вернуться ко входу</Button></section>;
+  if (status === "pending") return <section aria-live="polite" className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Проверяем ссылку…</h2><p className="mt-5 leading-7 text-secondary" role="status">Это займёт несколько секунд.</p></section>;
+  if (status === "success") return <section aria-live="polite" className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Почта подтверждена</h2><p className="mt-5 leading-7 text-secondary">Профиль активирован. Теперь вы можете войти в личный кабинет.</p><Button className="mt-7" onClick={onComplete} type="button">Войти</Button></section>;
+  if (status === "expired") return <section aria-live="polite" className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Ссылка устарела</h2><p className="mt-5 leading-7 text-secondary">Ссылка недействительна, уже использована или истекла. Войдите с логином и паролем — мы предложим запросить новое письмо или подтвердить профиль через Telegram.</p><Button className="mt-7" onClick={onComplete} type="button">Вернуться ко входу</Button></section>;
+  return <section aria-live="polite" className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Подтверждение профиля</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Не удалось проверить ссылку</h2><p className="mt-5 leading-7 text-secondary" role="alert">{error}</p><Button className="mt-7" onClick={onComplete} type="button" variant="secondary">Вернуться ко входу</Button></section>;
 }
 
-function ResetPasswordForm({ onComplete }: Readonly<{ onComplete: () => void }>) {
+function ResetPasswordForm({ onComplete, onRequestLink }: Readonly<{ onComplete: () => void; onRequestLink: () => void }>) {
   const [token] = useState(() => typeof window === "undefined" ? "" : new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [isPending, setIsPending] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [expired, setExpired] = useState(!/^[A-Za-z0-9_-]{32,128}$/.test(token));
   const [error, setError] = useState("");
 
   async function reset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError("");
-    if (token.length < 32) { setError("Ссылка недействительна или устарела"); return; }
-    if (Array.from(password).length < 15 || password !== confirmation) { setError(password !== confirmation ? "Пароли не совпадают" : "Пароль должен содержать не менее 15 символов"); return; }
+    if (Array.from(password).length < 15 || password !== confirmation) { setError(password !== confirmation ? "Пароли не совпадают" : "Пароль должен содержать не менее 15 символов"); focusField(event.currentTarget, password !== confirmation ? "#reset-confirmation" : "#reset-password"); return; }
     setIsPending(true);
     try {
       const response = await fetch("/api/v1/auth/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token, password, passwordConfirmation: confirmation }) });
-      if (!response.ok) { setError((await readApiErrorDetails(response, "Не удалось изменить пароль")).message); return; }
+      if (!response.ok) {
+        const details = await readApiErrorDetails(response, "Не удалось изменить пароль");
+        if (details.code === "invalid_or_expired_token") setExpired(true);
+        else setError(details.message);
+        return;
+      }
       setCompleted(true);
     } catch { setError("Сервис восстановления временно недоступен"); }
     finally { setIsPending(false); }
   }
 
-  if (completed) return <section aria-live="polite" className="pr-10 tablet:pr-12"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Пароль изменён</h2><p className="mt-5 leading-7 text-secondary">Все ранее открытые сеансы завершены. Войдите с новым паролем.</p><Button className="mt-7" onClick={onComplete} type="button">Войти</Button></section>;
-  return <form className="pr-10 tablet:pr-12" onSubmit={reset}><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Новый пароль</h2><div className="mt-8 space-y-6"><PasswordInput autoComplete="new-password" dataCy="reset-password" data-dialog-initial-focus label="Новый пароль" minLength={15} onChange={(event) => setPassword(event.target.value)} required value={password} /><PasswordInput autoComplete="new-password" dataCy="reset-password-confirmation" label="Подтверждение пароля" minLength={15} onChange={(event) => setConfirmation(event.target.value)} required value={confirmation} /></div>{error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}<Button className="mt-7 w-full" disabled={isPending} type="submit">{isPending ? "Сохраняем…" : "Сохранить пароль"}</Button></form>;
+  if (expired) return <section aria-live="polite"><h2 className="font-display text-3xl">Ссылка недействительна, уже использована или истекла</h2><p className="mt-4 text-secondary">Запросите новую ссылку для установки пароля.</p><Button className="mt-6" onClick={onRequestLink} type="button">Запросить новую ссылку</Button></section>;
+  if (completed) return <section aria-live="polite" className="min-w-0"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Пароль изменён</h2><p className="mt-5 leading-7 text-secondary">Все ранее открытые сеансы завершены. Войдите с новым паролем.</p><Button className="mt-7" onClick={onComplete} type="button">Войти</Button></section>;
+  return <form className="min-w-0" onSubmit={reset}><p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Восстановление доступа</p><h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Новый пароль</h2><div className="mt-8 space-y-6"><PasswordInput autoComplete="new-password" dataCy="reset-password" data-dialog-initial-focus id="reset-password" label="Новый пароль" minLength={15} onChange={(event) => setPassword(event.target.value)} required value={password} /><PasswordInput autoComplete="new-password" dataCy="reset-password-confirmation" id="reset-confirmation" label="Подтверждение пароля" minLength={15} onChange={(event) => setConfirmation(event.target.value)} required value={confirmation} /></div>{error ? <p className="mt-4 text-sm text-danger" role="alert">{error}</p> : null}<Button className="mt-7 w-full" disabled={isPending} type="submit">{isPending ? "Сохраняем…" : "Сохранить пароль"}</Button></form>;
 }
 
 function authDialogLabel(mode: AuthMode | null) {

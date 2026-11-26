@@ -110,7 +110,7 @@ func (service *Service) setAdminUserStatus(ctx context.Context, actor AccountVie
 	}
 	now := service.now().UTC()
 	retry, err := service.store.ConsumeRateLimit(ctx, RateLimitRequest{
-		PolicyCode: "admin.user-status", SubjectHash: service.tokens.HashForPurpose(actor.ID, "arhdesign/admin-user-status/v1"),
+		PolicyCode: "admin.user_status", SubjectHash: service.tokens.HashForPurpose(actor.ID, "arhdesign/admin-user-status/v1"),
 		HashKeyVersion: service.tokens.Version(), Capacity: 30, FullRefill: time.Minute, Retention: 24 * time.Hour, Now: now,
 	})
 	if err != nil {

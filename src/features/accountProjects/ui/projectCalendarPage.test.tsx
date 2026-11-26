@@ -29,7 +29,7 @@ describe("ProjectCalendarPage", () => {
     render(<ProjectCalendarPage projectId="project-1" />);
     expect(await screen.findByRole("region", { name: "Календарь проекта" })).toBeTruthy();
     expect(screen.queryByText("План проекта")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Календарь проекта" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Календарь проекта", level: 1 })).toBeTruthy();
     expect(await screen.findByRole("button", { name: /Задача: Рабочие чертежи/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /Встреча: Встреча с заказчиком/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Встречи" }));

@@ -20,10 +20,9 @@ var (
 )
 
 type Actor struct {
-	UserID     string
-	Privileged bool
-	Login      string
-	FirstName  string
+	UserID    string
+	Login     string
+	FirstName string
 }
 
 type Candidate struct {

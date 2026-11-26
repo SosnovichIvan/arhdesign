@@ -19,6 +19,8 @@ tags:
     description: Per-user interface settings and per-project personal settings.
   - name: Chats
     description: Personal and named group conversations outside project scope.
+  - name: Release notes
+    description: Product updates for signed-in accounts.
   - name: TechnicalSupport
     description: Sanitized runtime reports and authenticated product feedback.
 security:
@@ -326,6 +328,23 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthenticated'
 
+  /v1/release-notes:
+    get:
+      tags: [Release notes]
+      operationId: listReleaseNotes
+      summary: List release notes for signed-in users, newest first
+      security: [{ accountSession: [] }]
+      responses:
+        '200':
+          description: Release notes with new features and attributed fixes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ReleaseNote' }
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
   /v1/settings:
     get:
       tags: [Settings]
@@ -526,6 +545,108 @@ paths:
           $ref: '#/components/responses/CsrfRejected'
         '404':
           $ref: '#/components/responses/ResourceHidden'
+
+  /v1/chat-images/{chatId}:
+    parameters:
+      - $ref: '#/components/parameters/ImageChatId'
+      - $ref: '#/components/parameters/ImageProjectId'
+    get:
+      tags: [Chats]
+      operationId: listChatImages
+      summary: List images from an accessible conversation
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string, maxLength: 128 }
+      responses:
+        '200':
+          description: Pinned images first, then newest images.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatImagePage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+    post:
+      tags: [Chats]
+      operationId: uploadChatImage
+      summary: Attach one JPEG, PNG or GIF image up to 10 MiB
+      security: [{ accountSession: [], csrfHeader: [] }]
+      parameters:
+        - name: X-File-Name
+          in: header
+          required: true
+          description: File name or the UTF-8 prefix followed by a percent-encoded UTF-8 file name.
+          schema: { type: string, maxLength: 4096 }
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: A new UUID for each distinct upload, reused after a failed or uncertain response.
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary, maxLength: 10485760 }
+      responses:
+        '201':
+          description: Attached image metadata, including on replay.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatImage' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/chat-images/{chatId}/{imageId}:
+    parameters:
+      - $ref: '#/components/parameters/ImageChatId'
+      - $ref: '#/components/parameters/ImageProjectId'
+      - name: imageId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Chats]
+      operationId: viewChatImage
+      summary: View one image from an accessible conversation
+      responses:
+        '200':
+          description: Image bytes. Responses are private and cannot be cached.
+          content:
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/png: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+    put:
+      tags: [Chats]
+      operationId: setChatImagePin
+      summary: Pin or unpin an image in an accessible conversation
+      security: [{ accountSession: [], csrfHeader: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatImagePin' }
+      responses:
+        '204': { description: Image pin has been updated. }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
+    delete:
+      tags: [Chats]
+      operationId: deleteChatImage
+      summary: Remove an image as its uploader or an authorized chat manager
+      security: [{ accountSession: [], csrfHeader: [] }]
+      responses:
+        '204': { description: Image bytes have been removed. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/ResourceHidden' }
 
   /v1/technical/frontend-errors:
     post:
@@ -1913,6 +2034,16 @@ components:
       description: Constant-time compared secret configured when the Telegram webhook is registered.
 
   parameters:
+    ImageChatId:
+      name: chatId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ImageProjectId:
+      name: projectId
+      in: query
+      description: Required for project conversations, where platform administrators also have access. Omit for personal or group conversations, which require active membership.
+      schema: { type: string, format: uuid }
     ProjectId:
       name: projectId
       in: path
@@ -2039,6 +2170,49 @@ components:
             $ref: '#/components/schemas/ApiError'
 
   schemas:
+    ReleaseNote:
+      type: object
+      required: [version, added, fixed]
+      properties:
+        version: { type: string, example: '1.0.19' }
+        added:
+          type: array
+          items: { type: string }
+        fixed:
+          type: array
+          items:
+            type: object
+            required: [description, source]
+            properties:
+              description: { type: string }
+              source: { type: string }
+    ChatImage:
+      type: object
+      required: [id, name, mediaType, sizeBytes, width, height, createdAt, pinned, canDelete]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        mediaType: { type: string, enum: [image/jpeg, image/png, image/gif] }
+        sizeBytes: { type: integer, format: int64 }
+        width: { type: integer }
+        height: { type: integer }
+        createdAt: { type: string, format: date-time }
+        pinned: { type: boolean }
+        canDelete: { type: boolean }
+    ChatImagePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ChatImage' }
+        nextCursor: { type: string }
+    ChatImagePin:
+      type: object
+      additionalProperties: false
+      required: [pinned]
+      properties:
+        pinned: { type: boolean }
     ThemePreference:
       type: string
       enum: [light, dark]

@@ -1,5 +1,6 @@
 "use client";
 
+import { focusField } from "@/shared/lib/focusField";
 import Link from "next/link";
 import { type FormEvent, type ReactNode, useState } from "react";
 
@@ -52,8 +53,10 @@ export function RegistrationForm({ onSwitchToLogin }: Readonly<{ onSwitchToLogin
     setFieldErrors(validationErrors);
     if (Object.keys(validationErrors).length > 0) {
       setError("Исправьте ошибки в выделенных полях");
+      focusField(event.currentTarget, '[aria-invalid="true"]');
       return;
     }
+    const form = event.currentTarget;
     setIsPending(true);
     try {
       const response = await fetch("/api/v1/auth/register", {
@@ -66,8 +69,10 @@ export function RegistrationForm({ onSwitchToLogin }: Readonly<{ onSwitchToLogin
         const serverFields = toRegistrationFieldErrors(details.fields);
         if (Object.keys(serverFields).length > 0) {
           setFieldErrors(serverFields);
+          focusField(form, '[aria-invalid="true"]');
         } else if (response.status === 409) {
           setFieldErrors({ email: "Почта или логин уже используются", login: "Логин или почта уже используются" });
+          focusField(form, "#register-login");
         }
         setError(details.message);
         return;
@@ -83,7 +88,7 @@ export function RegistrationForm({ onSwitchToLogin }: Readonly<{ onSwitchToLogin
   if (isRegistered) return <VerificationPrompt email={values.email.trim()} identifier={values.login.trim()} />;
 
   return (
-    <form className="pr-10 tablet:pr-12" noValidate onSubmit={register}>
+    <form className="min-w-0" noValidate onSubmit={register}>
       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-action">Личный кабинет</p>
       <h2 className="mt-4 font-display text-4xl leading-none tablet:text-5xl">Создать профиль</h2>
       <p className="mt-4 text-secondary">Поля со звёздочкой обязательны.</p>
@@ -98,7 +103,7 @@ export function RegistrationForm({ onSwitchToLogin }: Readonly<{ onSwitchToLogin
         <PasswordInput autoComplete="new-password" dataCy="register-password-confirmation" error={fieldErrors.passwordConfirmation} id="register-password-confirmation" label="Подтверждение пароля" maxLength={128} minLength={15} onChange={(event) => update("passwordConfirmation", event.target.value)} required value={values.passwordConfirmation} />
       </div>
       <p className="mt-5 text-sm leading-6 text-secondary">Создавая профиль, вы соглашаетесь с <Link className="underline underline-offset-4" href="/privacy" target="_blank">политикой обработки персональных данных</Link>.</p>
-      {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
+      {error ? <p className="mt-4 text-sm text-danger" role="alert">{error}</p> : null}
       <Button className="mt-7 w-full tablet:w-auto" data-cy="register-submit" disabled={isPending} type="submit">{isPending ? "Создаём профиль…" : "Зарегистрироваться"}</Button>
       <p className="mt-6 text-sm text-secondary">Уже есть профиль? {onSwitchToLogin ? <button className="font-medium text-primary underline decoration-action underline-offset-4 hover:text-action" data-cy="auth-switch-login" onClick={onSwitchToLogin} type="button">Войти</button> : <Link className="font-medium text-primary underline underline-offset-4" href="/?auth=login">Войти</Link>}</p>
     </form>
@@ -106,7 +111,7 @@ export function RegistrationForm({ onSwitchToLogin }: Readonly<{ onSwitchToLogin
 }
 
 function Field({ children, error, hint, id, label }: Readonly<{ children: ReactNode; error?: string; hint?: string; id: string; label: string }>) {
-  return <div className="grid gap-2 text-sm font-medium"><label htmlFor={id}>{label}</label>{children}{error ? <p className="text-xs font-normal leading-5 text-red-700" id={`${id}-details`}>{error}</p> : hint ? <p className="text-xs font-normal leading-5 text-secondary" id={`${id}-details`}>{hint}</p> : null}</div>;
+  return <div className="grid gap-2 text-sm font-medium"><label htmlFor={id}>{label}</label>{children}{error ? <p className="text-xs font-normal leading-5 text-danger" id={`${id}-details`}>{error}</p> : hint ? <p className="text-xs font-normal leading-5 text-secondary" id={`${id}-details`}>{hint}</p> : null}</div>;
 }
 
 function validateRegistration(values: RegistrationValues): RegistrationFieldErrors {

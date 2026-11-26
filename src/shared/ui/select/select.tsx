@@ -14,6 +14,7 @@ type SelectProps<T extends string> = {
   className?: string;
   dataCy?: string;
   disabled?: boolean;
+  error?: string;
   label: string;
   onValueChange: (value: T) => void;
   options: readonly [SelectOption<T>, ...SelectOption<T>[]];
@@ -25,6 +26,7 @@ export function Select<T extends string>({
   className,
   dataCy,
   disabled = false,
+  error,
   label,
   onValueChange,
   options,
@@ -33,6 +35,7 @@ export function Select<T extends string>({
 }: Readonly<SelectProps<T>>) {
   const labelId = useId();
   const listboxId = useId();
+  const errorId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -126,6 +129,8 @@ export function Select<T extends string>({
       <button
         aria-activedescendant={isOpen ? `${listboxId}-option-${activeIndex}` : undefined}
         aria-controls={listboxId}
+        aria-describedby={error ? errorId : undefined}
+        aria-invalid={Boolean(error) || undefined}
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-labelledby={labelId}
@@ -144,6 +149,7 @@ export function Select<T extends string>({
           <path d="m3.5 6 4.5 4 4.5-4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
         </svg>
       </button>
+      {error ? <p className="text-sm text-danger" id={errorId} role="alert">{error}</p> : null}
       {isOpen ? createPortal(
         <div aria-labelledby={labelId} className="fixed z-[70] overflow-y-auto overscroll-contain border border-border bg-surface p-1 shadow-surface" id={listboxId} ref={listRef} role="listbox" style={popupStyle}>
           {options.map((option, index) => {

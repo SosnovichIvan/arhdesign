@@ -162,7 +162,8 @@ services:
       PGDATABASE: ${POSTGRES_DB}
     volumes:
       - ../apps/api/migrations:/migrations:ro
-    command: ["/bin/sh", "-ec", "for migration in /migrations/*.sql; do psql --set ON_ERROR_STOP=1 --file=\"$$migration\"; done"]
+      - ./scripts/migrate-postgres.sh:/usr/local/bin/arhdesign-migrate:ro
+    command: ["/bin/sh", "/usr/local/bin/arhdesign-migrate"]
     networks:
       - private
     logging: *default-logging

@@ -30,6 +30,7 @@ describe("Общий календарь проектов", () => {
       request.reply({ statusCode: 200, body: feed(selected.length ? [projectA] : [projectA, projectB]) });
     }).as("calendar");
 
+    cy.viewport(1440, 900);
     cy.visit("/account/calendar");
     cy.wait(["@accessCheck", "@calendar"]);
     cy.get('[data-cy="account-nav-календарь"]').should("have.attr", "aria-current", "page");

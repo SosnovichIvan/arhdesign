@@ -16,19 +16,18 @@ import (
 func (repository *Postgres) ListGlobalChats(ctx context.Context, query globalchat.ListQuery) ([]globalchat.Summary, error) {
 	rows, err := repository.pool.Query(ctx, `
 		SELECT chat.id::text,chat.kind,chat.name,chat.last_activity_at,chat.version,
-		       CASE WHEN membership.user_id IS NULL THEN 0 ELSE (
+		       (
 		         SELECT count(*)::integer FROM global_chat_messages unread
 		         WHERE unread.chat_id=chat.id AND unread.author_user_id<>$1::uuid
 		           AND unread.created_at>COALESCE(membership.last_read_at,membership.joined_at)
-		       ) END AS unread_count
+		       ) AS unread_count
 		FROM global_chats chat
-		LEFT JOIN global_chat_members membership ON membership.chat_id=chat.id AND membership.user_id=$1::uuid AND membership.left_at IS NULL
+		JOIN global_chat_members membership ON membership.chat_id=chat.id AND membership.user_id=$1::uuid AND membership.left_at IS NULL
 		WHERE chat.archived_at IS NULL
-		  AND ($2::boolean OR membership.user_id IS NOT NULL)
-		  AND ($3::timestamptz IS NULL OR (chat.last_activity_at,chat.id)<($3::timestamptz,$4::uuid))
+		  AND ($2::timestamptz IS NULL OR (chat.last_activity_at,chat.id)<($2::timestamptz,$3::uuid))
 		ORDER BY chat.last_activity_at DESC,chat.id DESC
-		LIMIT $5
-	`, query.UserID, query.Privileged, query.BeforeLastActivityAt, query.BeforeID, query.PageSize)
+		LIMIT $4
+	`, query.UserID, query.BeforeLastActivityAt, query.BeforeID, query.PageSize)
 	if err != nil {
 		return nil, fmt.Errorf("list global chats: %w", err)
 	}
@@ -145,19 +144,17 @@ func (repository *Postgres) CreateGlobalChat(ctx context.Context, command global
 
 func (repository *Postgres) GetGlobalChat(ctx context.Context, query globalchat.ConversationQuery) (globalchat.Conversation, error) {
 	var summary globalchat.Summary
-	var member bool
 	err := repository.pool.QueryRow(ctx, `
 		SELECT chat.id::text,chat.kind,chat.name,chat.last_activity_at,chat.version,
-		       membership.user_id IS NOT NULL,
-		       CASE WHEN membership.user_id IS NULL THEN 0 ELSE (
+		       (
 		         SELECT count(*)::integer FROM global_chat_messages unread
 		         WHERE unread.chat_id=chat.id AND unread.author_user_id<>$2::uuid
 		           AND unread.created_at>COALESCE(membership.last_read_at,membership.joined_at)
-		       ) END
+		       )
 		FROM global_chats chat
-		LEFT JOIN global_chat_members membership ON membership.chat_id=chat.id AND membership.user_id=$2::uuid AND membership.left_at IS NULL
-		WHERE chat.id=$1::uuid AND chat.archived_at IS NULL AND ($3::boolean OR membership.user_id IS NOT NULL)
-	`, query.ChatID, query.UserID, query.Privileged).Scan(&summary.ID, &summary.Kind, &summary.Name, &summary.LastActivityAt, &summary.Version, &member, &summary.UnreadCount)
+		JOIN global_chat_members membership ON membership.chat_id=chat.id AND membership.user_id=$2::uuid AND membership.left_at IS NULL
+		WHERE chat.id=$1::uuid AND chat.archived_at IS NULL
+	`, query.ChatID, query.UserID).Scan(&summary.ID, &summary.Kind, &summary.Name, &summary.LastActivityAt, &summary.Version, &summary.UnreadCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return globalchat.Conversation{}, globalchat.ErrNotFound
 	}
@@ -207,7 +204,7 @@ func (repository *Postgres) GetGlobalChat(ctx context.Context, query globalchat.
 	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
 		messages[left], messages[right] = messages[right], messages[left]
 	}
-	return globalchat.Conversation{Chat: summary, CurrentUserID: query.UserID, Messages: messages, NextCursor: next, HasMore: hasMore, CanSend: member || query.Privileged}, nil
+	return globalchat.Conversation{Chat: summary, CurrentUserID: query.UserID, Messages: messages, NextCursor: next, HasMore: hasMore, CanSend: true}, nil
 }
 
 func (repository *Postgres) CreateGlobalChatMessage(ctx context.Context, command globalchat.SendCommand) (globalchat.Message, error) {
@@ -218,9 +215,9 @@ func (repository *Postgres) CreateGlobalChatMessage(ctx context.Context, command
 	defer func() { _ = tx.Rollback(ctx) }()
 	var allowed bool
 	if err = tx.QueryRow(ctx, `
-		SELECT $3::boolean OR EXISTS (SELECT 1 FROM global_chat_members member WHERE member.chat_id=chat.id AND member.user_id=$2::uuid AND member.left_at IS NULL)
+		SELECT EXISTS (SELECT 1 FROM global_chat_members member WHERE member.chat_id=chat.id AND member.user_id=$2::uuid AND member.left_at IS NULL)
 		FROM global_chats chat WHERE chat.id=$1::uuid AND chat.archived_at IS NULL FOR UPDATE
-	`, command.ChatID, command.UserID, command.Privileged).Scan(&allowed); errors.Is(err, pgx.ErrNoRows) || err == nil && !allowed {
+	`, command.ChatID, command.UserID).Scan(&allowed); errors.Is(err, pgx.ErrNoRows) || err == nil && !allowed {
 		return globalchat.Message{}, globalchat.ErrNotFound
 	} else if err != nil {
 		return globalchat.Message{}, fmt.Errorf("authorize global chat message: %w", err)
@@ -286,7 +283,7 @@ func (repository *Postgres) MarkGlobalChatRead(ctx context.Context, actor global
 	if err != nil {
 		return fmt.Errorf("mark global chat read: %w", err)
 	}
-	if result.RowsAffected() == 0 && !actor.Privileged {
+	if result.RowsAffected() == 0 {
 		return globalchat.ErrNotFound
 	}
 	return nil

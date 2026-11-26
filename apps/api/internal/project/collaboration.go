@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"path"
 	"strings"
 	"time"
 	"unicode"
@@ -316,8 +317,9 @@ func (service *Service) ListDocuments(ctx context.Context, actor Actor, projectI
 }
 
 func (service *Service) UploadDocument(ctx context.Context, actor Actor, projectID, name, mediaType, requestID string, reader io.Reader, size int64) (ProjectDocument, error) {
-	name, mediaType = strings.TrimSpace(name), strings.TrimSpace(mediaType)
-	if !validActorAndProject(actor, projectID) || !validProjectDocumentName(name) || len(mediaType) < 3 || len(mediaType) > 127 || size < 1 || size > MaxProjectDocumentBytes || len(requestID) < 8 {
+	name = strings.TrimSpace(name)
+	mediaType = ProjectDocumentMediaType(name)
+	if !validActorAndProject(actor, projectID) || !validProjectDocumentName(name) || mediaType == "" || size < 1 || size > MaxProjectDocumentBytes || len(requestID) < 8 {
 		return ProjectDocument{}, ErrInvalidInput
 	}
 	content, err := io.ReadAll(io.LimitReader(reader, MaxProjectDocumentBytes+1))
@@ -337,7 +339,30 @@ func (service *Service) UploadDocument(ctx context.Context, actor Actor, project
 
 func validProjectDocumentName(name string) bool {
 	length := len([]rune(name))
-	return length >= 1 && length <= 240 && strings.IndexFunc(name, unicode.IsControl) == -1
+	return length >= 1 && length <= 240 && !strings.ContainsAny(name, "/\\") && strings.IndexFunc(name, unicode.IsControl) == -1
+}
+
+func ProjectDocumentMediaType(name string) string {
+	switch strings.ToLower(path.Ext(name)) {
+	case ".pdf":
+		return "application/pdf"
+	case ".doc":
+		return "application/msword"
+	case ".docx":
+		return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+	case ".xls":
+		return "application/vnd.ms-excel"
+	case ".xlsx":
+		return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".zip":
+		return "application/zip"
+	default:
+		return ""
+	}
 }
 
 func (service *Service) DownloadDocument(ctx context.Context, actor Actor, projectID, documentID string) (ProjectDocumentContent, error) {

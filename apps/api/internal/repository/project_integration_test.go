@@ -766,6 +766,31 @@ func TestProjectCollaborationNotificationsResolveEligibleRecipientsIntegration(t
 		t.Fatal(err)
 	}
 	assertProjectNotificationRecipients(t, pool, cipher, "project.context_chat.message_created", contextMessage.ID, []string{assignee, unrelatedMember, projectAdmin}, "комментарии к чертежам")
+	for _, userID := range []string{assignee, unrelatedMember, projectAdmin} {
+		if _, err = service.ListContextChat(context.Background(), project.Actor{UserID: userID}, created.ID, contextChat.ChatID, 20, ""); err != nil {
+			t.Fatalf("notification recipient cannot open chat: %v", err)
+		}
+	}
+	if _, err = service.ListContextChat(context.Background(), project.Actor{UserID: mutedMember}, created.ID, contextChat.ChatID, 20, ""); !errors.Is(err, project.ErrNotFound) {
+		t.Fatalf("unassigned executor could open task chat: %v", err)
+	}
+	ctx := context.Background()
+	var inAppCount int
+	if err = pool.QueryRow(ctx, `SELECT count(*) FROM account_notifications WHERE event_id=$1 AND recipient_user_id=$2`, contextMessage.ID, mutedMember).Scan(&inAppCount); err != nil || inAppCount != 0 {
+		t.Fatalf("unexpected task chat notification count=%d err=%v", inAppCount, err)
+	}
+	if _, err = pool.Exec(ctx, `
+		INSERT INTO account_notifications(recipient_user_id,project_id,actor_user_id,event_type,event_id,title,body,href,created_at)
+		VALUES ($1,$2,$3,'project.context_chat.message_created',$4,'Старое уведомление','Тест старого уведомления','/account',now())
+	`, mutedMember, created.ID, owner, contextMessage.ID); err != nil {
+		t.Fatal(err)
+	}
+	feed, err := store.ListAccountNotifications(ctx, project.Actor{UserID: mutedMember}, 100)
+	if err != nil || slices.ContainsFunc(feed.Items, func(item project.AccountNotification) bool {
+		return item.Title == "Старое уведомление"
+	}) {
+		t.Fatalf("inaccessible legacy notification is still visible: %v", err)
+	}
 
 	meeting, err := service.CreateMeeting(context.Background(), ownerActor, created.ID, project.CreateMeetingRequest{
 		Title:     "Встреча на объекте",

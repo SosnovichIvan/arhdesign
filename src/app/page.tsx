@@ -20,8 +20,8 @@ export default function HomePage() {
             <Typography as="h1" className="mt-6 max-w-4xl" variant="display">Пространства, которые остаются</Typography>
             <p className="mt-6 max-w-xl text-lg leading-8 text-secondary">Создаю архитектуру и интерьеры, в которых точность планировки соединяется с тишиной материалов и естественным светом.</p>
             <div className="mt-8 flex flex-wrap gap-4">
-              <Link className="inline-flex min-h-11 items-center rounded-full bg-primary px-5 text-xs font-semibold uppercase tracking-[0.1em] text-inverse-text hover:bg-action" href="/projects">Смотреть проекты</Link>
-              <ContactFormTrigger />
+              <Link className="inline-flex min-h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-medium text-inverse-text hover:bg-action" href="/projects">Смотреть проекты</Link>
+              <ContactFormTrigger variant="secondary" />
             </div>
           </div>
           <ProjectCarousel className="mt-12 desktop:mt-0" imageClassName="aspect-[4/5] tablet:aspect-[16/10] desktop:aspect-[4/5]" images={heroImages} title="Избранные проекты" />

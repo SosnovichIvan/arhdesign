@@ -118,3 +118,24 @@ describe("ContactForm", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
+
+it("rejects arbitrary contact text and accepts a formatted telephone number", async () => {
+  const request = vi.fn().mockResolvedValue(new Response(null, { status: 201 }));
+  vi.stubGlobal("fetch", request);
+  render(<ContactForm />);
+  fireEvent.click(screen.getByRole("button", { name: "Обсудить проект" }));
+  fireEvent.change(screen.getByLabelText(/^Имя/), { target: { value: "Анна" } });
+  fireEvent.change(screen.getByLabelText(/^Тип проекта/), { target: { value: "Квартира" } });
+  fireEvent.click(screen.getByRole("checkbox"));
+  const contact = screen.getByLabelText(/^Телефон или почта/);
+  for (const bad of ["груша", "123", "+1234567890123456"]) {
+    fireEvent.change(contact, { target: { value: bad } });
+    fireEvent.click(screen.getByRole("button", { name: "Отправить запрос" }));
+    expect(await screen.findByText("Введите номер телефона или адрес почты")).toBeTruthy();
+    expect(contact.getAttribute("aria-describedby")).toBe("contact-value-error");
+    expect(request).not.toHaveBeenCalled();
+  }
+  fireEvent.change(contact, { target: { value: "+7 (900) 123-45-67" } });
+  fireEvent.click(screen.getByRole("button", { name: "Отправить запрос" }));
+  expect(await screen.findByText(/Спасибо, заявка принята/)).toBeTruthy();
+});

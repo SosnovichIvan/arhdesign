@@ -44,7 +44,8 @@ describe("Восстановление доступа и управление с
     cy.get('[data-cy="reset-password-confirmation"]').type("Новый надёжный пароль 2026!", { log: false });
     cy.contains("button", "Сохранить пароль").click();
     cy.wait("@reusedResetToken");
-    cy.get('[role="alert"]').should("contain.text", "уже использована");
+    cy.contains("h2", "Ссылка недействительна, уже использована или истекла").should("be.visible");
+    cy.contains("button", "Запросить новую ссылку").should("be.visible");
     cy.contains("h2", "Пароль изменён").should("not.exist");
   });
 

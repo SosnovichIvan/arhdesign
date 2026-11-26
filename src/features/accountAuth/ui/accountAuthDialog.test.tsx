@@ -240,3 +240,39 @@ describe("AccountAuthProvider", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("временно недоступен");
   });
 });
+
+it("connects missing credential errors to the form fields and prevents a request", async () => {
+  const request = vi.fn();
+  vi.stubGlobal("fetch", request);
+  render(<AccountAuthProvider><Trigger /></AccountAuthProvider>);
+  fireEvent.click(screen.getByRole("button", { name: "Открыть вход" }));
+  fireEvent.click(screen.getByRole("button", { name: "Войти" }));
+  const identifier = screen.getByLabelText("Логин или почта *");
+  expect(identifier.getAttribute("aria-describedby")).toBe("login-identifier-error");
+  expect(screen.getByText("Укажите логин или почту")).toBeTruthy();
+  fireEvent.change(identifier, { target: { value: "reviewer" } });
+  fireEvent.click(screen.getByRole("button", { name: "Войти" }));
+  const password = screen.getByLabelText("Пароль *");
+  expect(password.getAttribute("aria-invalid")).toBe("true");
+  await waitFor(() => expect(document.activeElement).toBe(password));
+  expect(request).not.toHaveBeenCalled();
+});
+
+it("offers a new link when recovery opens without a token", async () => {
+  window.history.replaceState({}, "", "/?auth=reset");
+  render(<AccountAuthProvider><Trigger /></AccountAuthProvider>);
+  const renew = await screen.findByRole("button", { name: "Запросить новую ссылку" });
+  expect(screen.queryByLabelText("Новый пароль *")).toBeNull();
+  fireEvent.click(renew);
+  expect(screen.getByRole("heading", { name: "Восстановить пароль" })).toBeTruthy();
+});
+
+it("replaces the password form when the server reports an expired token", async () => {
+  window.history.replaceState({}, "", "/?auth=reset#token=" + "q".repeat(43));
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: { code: "invalid_or_expired_token", message: "Ссылка устарела" } }, { status: 400 })));
+  render(<AccountAuthProvider><Trigger /></AccountAuthProvider>);
+  fireEvent.change(await screen.findByLabelText("Новый пароль *"), { target: { value: "Unique new password 2026" } });
+  fireEvent.change(screen.getByLabelText("Подтверждение пароля *"), { target: { value: "Unique new password 2026" } });
+  fireEvent.click(screen.getByRole("button", { name: "Сохранить пароль" }));
+  expect(await screen.findByRole("button", { name: "Запросить новую ссылку" })).toBeTruthy();
+});

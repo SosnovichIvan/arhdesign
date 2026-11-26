@@ -97,8 +97,8 @@ func TestGlobalChatMembershipPrivilegeAndNotificationOutbox(t *testing.T) {
 	if _, err = service.Get(context.Background(), globalchat.Actor{UserID: outsiderID}, created.ID, 50, ""); !errors.Is(err, globalchat.ErrNotFound) {
 		t.Fatalf("outsider read error=%v", err)
 	}
-	if conversation, getErr := service.Get(context.Background(), globalchat.Actor{UserID: technicalID, Privileged: true}, created.ID, 50, ""); getErr != nil || !conversation.CanSend {
-		t.Fatalf("technical conversation=%#v error=%v", conversation, getErr)
+	if _, getErr := service.Get(context.Background(), globalchat.Actor{UserID: technicalID}, created.ID, 50, ""); !errors.Is(getErr, globalchat.ErrNotFound) {
+		t.Fatalf("technical outsider read error=%v", getErr)
 	}
 	candidates, err := service.SearchCandidates(context.Background(), owner, "chat.mem")
 	if err != nil || len(candidates) != 1 || candidates[0].UserID != memberID {
@@ -166,7 +166,7 @@ func TestGlobalChatMembershipPrivilegeAndNotificationOutbox(t *testing.T) {
 	if err = service.MarkRead(context.Background(), globalchat.Actor{UserID: memberID}, created.ID); err != nil {
 		t.Fatalf("mark global chat read: %v", err)
 	}
-	if err = service.MarkRead(context.Background(), globalchat.Actor{UserID: technicalID, Privileged: true}, missingUserID); err != nil {
+	if err = service.MarkRead(context.Background(), globalchat.Actor{UserID: technicalID}, missingUserID); !errors.Is(err, globalchat.ErrNotFound) {
 		t.Fatalf("privileged mark-read of absent chat: %v", err)
 	}
 	if err = service.MarkRead(context.Background(), globalchat.Actor{UserID: outsiderID}, created.ID); !errors.Is(err, globalchat.ErrNotFound) {
