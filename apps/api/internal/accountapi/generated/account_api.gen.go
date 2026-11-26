@@ -895,6 +895,7 @@ type ReleaseNote struct {
 		Description string `json:"description"`
 		Source      string `json:"source"`
 	} `json:"fixed"`
+	Read    bool   `json:"read"`
 	Version string `json:"version"`
 }
 
@@ -1537,6 +1538,9 @@ type ServerInterface interface {
 	// List release notes for signed-in users, newest first
 	// (GET /v1/release-notes)
 	ListReleaseNotes(w http.ResponseWriter, r *http.Request)
+	// Mark a release as read for the signed-in account
+	// (PUT /v1/release-notes/{version}/read)
+	MarkReleaseNoteRead(w http.ResponseWriter, r *http.Request, version string)
 	// Get interface settings of the current account
 	// (GET /v1/settings)
 	GetUserSettings(w http.ResponseWriter, r *http.Request)
@@ -4437,6 +4441,39 @@ func (siw *ServerInterfaceWrapper) ListReleaseNotes(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// MarkReleaseNoteRead operation middleware
+func (siw *ServerInterfaceWrapper) MarkReleaseNoteRead(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "version" -------------
+	var version string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version", r.PathValue("version"), &version, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	ctx = context.WithValue(ctx, CsrfHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MarkReleaseNoteRead(w, r, version)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetUserSettings(w http.ResponseWriter, r *http.Request) {
 
@@ -4714,6 +4751,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("PATCH "+options.BaseURL+"/v1/projects/{projectId}/tasks/{taskId}", wrapper.UpdateProjectTask)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/projects/{projectId}/upcoming", wrapper.ListProjectUpcomingItems)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/release-notes", wrapper.ListReleaseNotes)
+	m.HandleFunc("PUT "+options.BaseURL+"/v1/release-notes/{version}/read", wrapper.MarkReleaseNoteRead)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/settings", wrapper.GetUserSettings)
 	m.HandleFunc("PUT "+options.BaseURL+"/v1/settings", wrapper.UpdateUserSettings)
 	m.HandleFunc("POST "+options.BaseURL+"/v1/technical/feedback", wrapper.CreateTechnicalFeedback)

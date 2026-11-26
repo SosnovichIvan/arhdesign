@@ -22,6 +22,7 @@ vi.mock("next/link", () => ({ default: ({ children, href, ...props }: React.Anch
 vi.mock("next/image", () => ({ default: ({ alt, ...props }: ImgHTMLAttributes<HTMLImageElement>) => createElement("img", { ...props, alt: alt ?? "" }) }));
 vi.mock("@/features/themeToggle", () => ({ ThemeToggle: () => <button type="button">Тема</button> }));
 vi.mock("@/features/accountNotifications", () => ({ AccountNotificationCenter: () => <button aria-label="Уведомления" type="button" /> }));
+vi.mock("@/features/releaseNotes/releaseNotesDrawer", () => ({ ReleaseNotesDrawer: () => <button aria-label="Что нового" type="button" /> }));
 vi.mock("@/features/accountProjects/api/projects", () => ({
 	loadCurrentAccount,
 	ProjectApiError: ProjectApiErrorMock,
