@@ -64,7 +64,7 @@ function CreateContextChatForm({ contextId, contextTitle, contextType, onCancel,
     <h2 className="mt-3 font-display text-4xl">Новое обсуждение</h2>
     <p className="mt-3 text-sm leading-6 text-secondary">Чат будет связан с записью «{contextTitle}». Его увидят только участники, у которых есть доступ к этой записи.</p>
     <label className="mt-7 grid gap-2 text-sm font-medium">Название обсуждения *<Input autoFocus data-cy="context-chat-name" data-dialog-initial-focus maxLength={200} onChange={(event) => setName(event.target.value)} value={name} /></label>
-    {error ? <p className="mt-4 text-sm text-red-700" role="alert">{error}</p> : null}
+    {error ? <p className="mt-4 text-sm text-danger" role="alert">{error}</p> : null}
     <div className="mt-7 flex flex-wrap gap-3"><Button data-cy="create-context-chat" disabled={pending} type="submit">{pending ? "Создаём…" : "Создать обсуждение"}</Button><Button disabled={pending} onClick={onCancel} type="button" variant="secondary">Отмена</Button></div>
   </form>;
 }

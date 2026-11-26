@@ -1,4 +1,5 @@
 import { csrfToken, readApiError } from "@/shared/lib";
+import { getWithAccountSession } from "@/shared/lib/accountSession";
 
 import type { CreateProjectExpensePayload, CreateProjectMeetingPayload, CreateProjectPayload, CreateProjectTaskPayload, CurrentAccount, ProjectCalendarFeed, ProjectChatContext, ProjectChatContextType, ProjectChatList, ProjectChatMember, ProjectChatMemberList, ProjectChatMessage, ProjectChatPage, ProjectChatSummary, ProjectDocument, ProjectDocumentList, ProjectExpense, ProjectExpenseList, ProjectFinanceSummary, ProjectMaterial, ProjectMaterialInput, ProjectMaterialList, ProjectMember, ProjectMemberCandidateList, ProjectMemberList, ProjectPage, ProjectTask, ProjectTaskList, ProjectTaskStatus, ProjectUpcomingFeed, ProjectUpcomingItem, ProjectUserSettings, ProjectView, UpdateProjectPayload } from "../model/types";
 
@@ -7,8 +8,10 @@ export class ProjectApiError extends Error {
     super(message);
   }
 }
-export async function loadProjects(signal?: AbortSignal): Promise<ProjectPage> {
-  const response = await fetch("/api/v1/projects?pageSize=50", { credentials: "same-origin", signal });
+export async function loadProjects(signal?: AbortSignal, cursor?: string): Promise<ProjectPage> {
+  const query = new URLSearchParams({ pageSize: "50" });
+  if (cursor) query.set("cursor", cursor);
+  const response = await fetch(`/api/v1/projects?${query}`, { credentials: "same-origin", signal });
   if (!response.ok) throw new ProjectApiError(await readApiError(response, "Не удалось загрузить проекты"), response.status);
   return response.json() as Promise<ProjectPage>;
 }
@@ -217,7 +220,7 @@ export async function sendProjectContextChatMessage(projectId: string, chatId: s
 }
 
 export async function loadCurrentAccount(signal?: AbortSignal): Promise<CurrentAccount> {
-  const response = await fetch("/api/v1/me", { credentials: "same-origin", signal });
+  const response = await getWithAccountSession("/api/v1/me", signal);
   if (!response.ok) throw new ProjectApiError(await readApiError(response, "Не удалось проверить права"), response.status);
   return response.json() as Promise<CurrentAccount>;
 }

@@ -87,6 +87,21 @@ func enqueueProjectMemberNotification(ctx context.Context, tx pgx.Tx, projectID,
 	return nil
 }
 
+const eligibleChatNotificationRecipients = `
+	SELECT subject.user_id, chat.project_id, chat.id AS chat_id
+	FROM chats chat
+	JOIN projects project ON project.id=chat.project_id AND project.archived_at IS NULL
+	JOIN chat_memberships membership ON membership.chat_id=chat.id AND membership.removed_at IS NULL
+	JOIN users recipient ON recipient.id=membership.user_id AND recipient.status='active'
+	CROSS JOIN LATERAL (
+		SELECT chat.context_type,chat.context_id,chat.project_id,recipient.id AS user_id,
+		       COALESCE(recipient.global_role IN ('super_admin','technical_admin'),false) AS is_admin
+	) subject
+	WHERE chat.archived_at IS NULL
+	  AND (subject.is_admin OR EXISTS (SELECT FROM project_memberships member WHERE member.project_id=chat.project_id AND member.user_id=subject.user_id AND member.revoked_at IS NULL))
+	  AND (chat.kind='project' OR EXISTS (` + visibleChatContextTitle + `))
+`
+
 func enqueueChatMemberNotification(ctx context.Context, tx pgx.Tx, projectID, chatID, actorID, eventID string, notification *project.EventNotification, now time.Time) error {
 	if notification == nil {
 		return nil
@@ -96,9 +111,8 @@ func enqueueChatMemberNotification(ctx context.Context, tx pgx.Tx, projectID, ch
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO account_notifications(recipient_user_id,project_id,actor_user_id,event_type,event_id,title,body,href,created_at)
 		SELECT membership.user_id,$1::uuid,$3::uuid,$5::text,$4::text,$6::text,$7::text,$8::text,$9::timestamptz
-		FROM chat_memberships membership
-		JOIN users ON users.id=membership.user_id AND users.status='active'
-		WHERE membership.chat_id=$2::uuid AND membership.project_id=$1::uuid AND membership.removed_at IS NULL AND membership.user_id<>$3::uuid
+		FROM (`+eligibleChatNotificationRecipients+`) membership
+		WHERE membership.project_id=$1::uuid AND membership.chat_id=$2::uuid AND membership.user_id<>$3::uuid
 		ON CONFLICT (recipient_user_id,event_type,event_id) DO NOTHING
 	`, projectID, chatID, actorID, eventID, notification.MessageType, title, body, href, now); err != nil {
 		return fmt.Errorf("insert chat member account notifications: %w", err)
@@ -110,12 +124,11 @@ func enqueueChatMemberNotification(ctx context.Context, tx pgx.Tx, projectID, ch
 		)
 		SELECT membership.user_id,'telegram',$5::text,$5::text || ':' || $4::text || ':' || membership.user_id,
 		       $6,$7,jsonb_build_object('projectId',$1::text,'chatId',$2::text,'eventId',$4::text),$8,$8
-		FROM chat_memberships membership
-		JOIN users ON users.id=membership.user_id AND users.status='active'
-		JOIN telegram_account_bindings binding ON binding.user_id=users.id AND binding.revoked_at IS NULL
-		JOIN telegram_subscribers subscriber ON subscriber.user_id=users.id AND subscriber.chat_id=binding.chat_id AND subscriber.unsubscribed_at IS NULL
-		LEFT JOIN account_notification_preferences preferences ON preferences.user_id=users.id
-		WHERE membership.chat_id=$2::uuid AND membership.project_id=$1::uuid AND membership.removed_at IS NULL
+		FROM (`+eligibleChatNotificationRecipients+`) membership
+		JOIN telegram_account_bindings binding ON binding.user_id=membership.user_id AND binding.revoked_at IS NULL
+		JOIN telegram_subscribers subscriber ON subscriber.user_id=membership.user_id AND subscriber.chat_id=binding.chat_id AND subscriber.unsubscribed_at IS NULL
+		LEFT JOIN account_notification_preferences preferences ON preferences.user_id=membership.user_id
+		WHERE membership.project_id=$1::uuid AND membership.chat_id=$2::uuid
 		  AND membership.user_id<>$3::uuid AND COALESCE(preferences.telegram_events_enabled,TRUE)
 		ON CONFLICT (idempotency_key) DO NOTHING
 	`, projectID, chatID, actorID, eventID, notification.MessageType, notification.PayloadCiphertext, notification.PayloadKeyVersion, now)
@@ -169,13 +182,11 @@ func enqueueContextChatNotification(ctx context.Context, tx pgx.Tx, projectID, c
 		)
 		SELECT membership.user_id,'telegram',$5::text,$5::text || ':' || $3::text || ':' || membership.user_id,
 		       $6,$7,jsonb_build_object('projectId',$1::text,'chatId',$2::text,'messageId',$3::text),$8,$8
-		FROM chats chat
-		JOIN chat_memberships membership ON membership.chat_id=chat.id AND membership.project_id=chat.project_id AND membership.removed_at IS NULL
-		JOIN users ON users.id=membership.user_id AND users.status='active'
-		JOIN telegram_account_bindings binding ON binding.user_id=users.id AND binding.revoked_at IS NULL
-		JOIN telegram_subscribers subscriber ON subscriber.user_id=users.id AND subscriber.chat_id=binding.chat_id AND subscriber.unsubscribed_at IS NULL
-		LEFT JOIN account_notification_preferences preferences ON preferences.user_id=users.id
-		WHERE chat.id=$2::uuid AND chat.project_id=$1::uuid AND chat.archived_at IS NULL
+		FROM (`+eligibleChatNotificationRecipients+`) membership
+		JOIN telegram_account_bindings binding ON binding.user_id=membership.user_id AND binding.revoked_at IS NULL
+		JOIN telegram_subscribers subscriber ON subscriber.user_id=membership.user_id AND subscriber.chat_id=binding.chat_id AND subscriber.unsubscribed_at IS NULL
+		LEFT JOIN account_notification_preferences preferences ON preferences.user_id=membership.user_id
+		WHERE membership.project_id=$1::uuid AND membership.chat_id=$2::uuid
 		  AND membership.user_id<>$4::uuid AND COALESCE(preferences.telegram_events_enabled,TRUE)
 		ON CONFLICT (idempotency_key) DO NOTHING
 	`, projectID, chatID, messageID, actorID, notification.MessageType, notification.PayloadCiphertext, notification.PayloadKeyVersion, now)
@@ -207,10 +218,8 @@ func insertContextChatAccountNotifications(ctx context.Context, tx pgx.Tx, proje
 	_, err := tx.Exec(ctx, `
 		INSERT INTO account_notifications(recipient_user_id,project_id,actor_user_id,event_type,event_id,title,body,href,created_at)
 		SELECT membership.user_id,$1::uuid,$4::uuid,$5::text,$3::text,$6::text,$7::text,'/account/projects/' || $1::text || '/chat/' || $2::text,$8::timestamptz
-		FROM chats chat
-		JOIN chat_memberships membership ON membership.chat_id=chat.id AND membership.project_id=chat.project_id AND membership.removed_at IS NULL
-		JOIN users ON users.id=membership.user_id AND users.status='active'
-		WHERE chat.id=$2::uuid AND chat.project_id=$1::uuid AND chat.archived_at IS NULL AND membership.user_id<>$4::uuid
+		FROM (`+eligibleChatNotificationRecipients+`) membership
+		WHERE membership.project_id=$1::uuid AND membership.chat_id=$2::uuid AND membership.user_id<>$4::uuid
 		ON CONFLICT (recipient_user_id,event_type,event_id) DO NOTHING
 	`, projectID, chatID, messageID, actorID, notification.MessageType, title, body, now)
 	if err != nil {

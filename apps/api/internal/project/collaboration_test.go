@@ -361,3 +361,16 @@ func TestCollaborationPropagatesNotificationEncryptionFailures(t *testing.T) {
 type errorReader struct{}
 
 func (errorReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestProjectDocumentFormats(t *testing.T) {
+	for _, filename := range []string{"draft.PDF", "version.doc", "version.docx", "budget.xls", "budget.xlsx", "plan.JPG", "plan.jpeg", "render.png", "files.zip"} {
+		if ProjectDocumentMediaType(filename) == "" {
+			t.Errorf("supported format rejected: %s", filename)
+		}
+	}
+	for _, filename := range []string{"photo.exe", "photo.png.exe", "render.svg", "file"} {
+		if ProjectDocumentMediaType(filename) != "" {
+			t.Errorf("unsupported format accepted: %s", filename)
+		}
+	}
+}

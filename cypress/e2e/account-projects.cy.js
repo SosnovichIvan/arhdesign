@@ -141,7 +141,8 @@ describe("Личный кабинет — проекты", () => {
     cy.get('[data-cy="project-nav-summary"]').should("have.attr", "aria-current", "page");
     cy.get('[data-cy="project-nav-tasks"]').should("have.attr", "href", `/account/projects/${project.id}/tasks`).and("not.have.attr", "aria-disabled");
     cy.get('[data-cy="account-nav-проекты"]').should("not.exist");
-    cy.get("aside").should("not.contain.text", "ПРОЕКТ").and("not.contain.text", "Квартира на Полянке");
+    cy.get("aside").should("not.contain.text", "ПРОЕКТ");
+    cy.get("aside").contains("Квартира на Полянке").should("not.be.visible");
     cy.get('[aria-label="Хлебные крошки"]').should("contain.text", "Квартира на Полянке");
     cy.get("#project-title").should("have.class", "sr-only");
     cy.get('[data-cy="delete-project"]').should("not.exist");
@@ -365,11 +366,12 @@ describe("Личный кабинет — проекты", () => {
       request.reply({ statusCode: 200, body: { items: events, rangeStart: taskAt.toISOString(), rangeEnd: meetingAt.toISOString() } });
     }).as("projectCalendar");
 
+    cy.viewport(1440, 900);
     cy.visit(`/account/projects/${project.id}/calendar`);
     cy.wait("@projectCalendar");
     cy.get('[data-cy="project-nav-calendar"]').should("have.attr", "aria-current", "page");
     cy.get('[data-cy="project-calendar-page"]').should("not.contain.text", "План проекта");
-    cy.get('[data-cy="project-calendar-page"] h1').should("not.exist");
+    cy.get('[data-cy="project-calendar-page"] h1').should("have.text", "Календарь проекта");
     cy.get('[data-cy="calendar-grid"]').should("contain.text", "Подготовить планы").and("contain.text", "Встреча с заказчиком");
     cy.contains("button", "Встречи").click();
     cy.get('[data-cy="calendar-grid"]').should("not.contain.text", "Подготовить планы").and("contain.text", "Встреча с заказчиком");
@@ -519,6 +521,7 @@ describe("Личный кабинет — проекты", () => {
       request.reply({ statusCode: 201, body: item });
     }).as("createMaterial");
 
+    cy.viewport(1440, 900);
     cy.visit(`/account/projects/${project.id}/materials`);
     cy.wait("@materials");
     cy.get('[data-cy="project-nav-materials"]').should("have.attr", "aria-current", "page");
@@ -703,14 +706,14 @@ describe("Личный кабинет — проекты", () => {
     cy.get('[data-cy="project-task-shared-task"]').should("contain.text", "Рабочие чертежи").and("contain.text", "Иван Петров");
     cy.visit(`/account/projects/${project.id}/calendar`);
     cy.wait("@participantCalendar");
-    cy.get('[data-cy="calendar-grid"]').should("contain.text", "Встреча на объекте");
+    cy.get('[data-cy="calendar-list"]').should("contain.text", "Встреча на объекте");
 	cy.visit(`/account/projects/${project.id}/finances`);
 	cy.wait("@participantExpenses");
 	cy.get('[data-cy="project-expenses-page"]').should("contain.text", "Керамогранит для санузла");
 	cy.get('[data-cy="add-project-expense"]').should("not.exist");
 	cy.visit(`/account/projects/${project.id}/materials`);
 	cy.wait("@participantMaterials");
-	cy.get(`[data-cy="material-row-${sharedMaterial.id}"]`).should("contain.text", "Керамогранит серый").and("contain.text", "Поставщик");
+	cy.get(`[data-cy="material-list-item-${sharedMaterial.id}"]`).should("contain.text", "Керамогранит серый").and("contain.text", "Поставщик");
 	cy.get('[data-cy="add-project-material"]').should("not.exist");
 	cy.get(`[data-cy="edit-material-${sharedMaterial.id}"]`).should("not.exist");
 	cy.get(`[data-cy="delete-material-${sharedMaterial.id}"]`).should("not.exist");
@@ -888,6 +891,7 @@ describe("Личный кабинет — проекты", () => {
     cy.intercept("GET", `/api/v1/projects/${project.id}/documents`, { statusCode: 200, body: { canUpload: true, items: [] } });
     cy.viewport(767, 600);
     cy.visit(`/account/projects/${project.id}/documents`);
+    cy.contains("button", "Документы").filter("[aria-expanded]").click();
     cy.get('nav[aria-label="Разделы проекта"]').should("be.visible").and(($navigation) => {
       expect($navigation[0].scrollWidth).to.be.at.most($navigation[0].clientWidth + 1);
     });

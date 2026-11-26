@@ -12,6 +12,11 @@ type ThemePreferenceContextValue = {
 
 const ThemePreferenceContext = createContext<ThemePreferenceContextValue | null>(null);
 
+function readGuestTheme(): ThemePreference {
+  try { return localStorage.getItem("arhdesign:theme") === "dark" ? "dark" : "light"; }
+  catch { return "light"; }
+}
+
 export function ThemePreferenceProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [theme, setThemeState] = useState<ThemePreference>("light");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -35,12 +40,16 @@ export function ThemePreferenceProvider({ children }: Readonly<{ children: React
 
   useEffect(() => {
     const controller = new AbortController();
-    queueMicrotask(() => { if (!controller.signal.aborted) void reload(controller.signal); });
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return;
+      applyTheme(readGuestTheme());
+      void reload(controller.signal);
+    });
     const sessionChanged = (event: Event) => {
       const authenticated = event instanceof CustomEvent ? event.detail?.authenticated : undefined;
       if (authenticated === false) {
         setIsAuthenticated(false);
-        applyTheme("light");
+        applyTheme(readGuestTheme());
         return;
       }
       void reload();
@@ -55,7 +64,10 @@ export function ThemePreferenceProvider({ children }: Readonly<{ children: React
   const setTheme = useCallback(async (nextTheme: ThemePreference) => {
     const previousTheme = theme;
     applyTheme(nextTheme);
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      try { localStorage.setItem("arhdesign:theme", nextTheme); } catch { /* Storage can be disabled. */ }
+      return;
+    }
     setIsPending(true);
     try {
       applyTheme(await saveThemePreference(nextTheme));

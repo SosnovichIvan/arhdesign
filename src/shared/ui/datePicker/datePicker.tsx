@@ -83,6 +83,7 @@ export function DatePicker({ className, dataCy, disabled = false, error, label, 
     }
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
+      event.preventDefault();
       setIsOpen(false);
       triggerRef.current?.focus();
     }
@@ -112,7 +113,7 @@ export function DatePicker({ className, dataCy, disabled = false, error, label, 
   return (
     <div className={cn("relative grid gap-2 text-sm font-medium", className)} ref={rootRef}>
       <span id={labelId}>{label}{required ? <span aria-hidden="true"> *</span> : null}</span>
-      <div className={cn("flex min-h-12 items-center border-b border-border transition-colors hover:border-action focus-within:border-field-focus", disabled && "opacity-50", error && "border-red-700 hover:border-red-700 focus-within:border-red-700")}>
+      <div className={cn("flex min-h-12 items-center border-b border-border transition-colors hover:border-action focus-within:border-field-focus", disabled && "opacity-50", error && "border-danger hover:border-danger focus-within:border-danger")}>
         <button
           aria-controls={dialogId}
           aria-describedby={error ? errorId : undefined}
@@ -135,7 +136,7 @@ export function DatePicker({ className, dataCy, disabled = false, error, label, 
           <CalendarIcon />
         </button>
       </div>
-      {error ? <p aria-live="polite" className="text-sm font-normal text-red-700" data-cy={dataCy ? `${dataCy}-error` : undefined} id={errorId} role="alert">{error}</p> : null}
+      {error ? <p aria-live="polite" className="text-sm font-normal text-danger" data-cy={dataCy ? `${dataCy}-error` : undefined} id={errorId} role="alert">{error}</p> : null}
 
       {isOpen ? (
         <div

@@ -85,7 +85,7 @@ func TestGlobalChatHandlersHappyPath(t *testing.T) {
 
 	list := httptest.NewRecorder()
 	pageSize := 1
-	firstPage, err := endpoint.globalChats.List(context.Background(), globalchat.ListRequest{Actor: globalchat.Actor{UserID: endpointActorID, Privileged: true}, PageSize: pageSize})
+	firstPage, err := endpoint.globalChats.List(context.Background(), globalchat.ListRequest{Actor: globalchat.Actor{UserID: endpointActorID}, PageSize: pageSize})
 	if err != nil || firstPage.NextCursor == nil {
 		t.Fatalf("prepare list cursor page=%#v error=%v", firstPage, err)
 	}

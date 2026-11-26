@@ -726,9 +726,21 @@ func (endpoint *AccountEndpoint) DownloadProjectDocument(w http.ResponseWriter, 
 		endpoint.writeProjectError(w, err, requestID)
 		return
 	}
-	w.Header().Set("Content-Type", document.MediaType)
+	mediaType := project.ProjectDocumentMediaType(document.Name)
+	disposition := "inline"
+	switch mediaType {
+	case "application/pdf", "image/jpeg", "image/png":
+	default:
+		disposition = "attachment"
+	}
+	if mediaType == "" {
+		mediaType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", mediaType)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("Content-Length", strconv.FormatInt(document.SizeBytes, 10))
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": document.Name}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": document.Name}))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(document.Content)
 }

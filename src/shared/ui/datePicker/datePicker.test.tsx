@@ -77,7 +77,7 @@ describe("DatePicker", () => {
     expect(trigger.getAttribute("aria-invalid")).toBe("true");
     expect(trigger.getAttribute("aria-describedby")).toBe(error.id);
     expect(error.getAttribute("data-cy")).toBe("finish-date-error");
-    expect(trigger.parentElement?.className).toContain("border-red-700");
+    expect(trigger.parentElement?.className).toContain("border-danger");
   });
 
   it("keeps the calendar inside the viewport and opens above when there is no space below", () => {

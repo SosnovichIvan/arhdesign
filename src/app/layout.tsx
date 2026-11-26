@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import type { ReactNode } from "react";
 
 import "./globals.css";
@@ -30,5 +31,20 @@ export const metadata: Metadata = {
 type RootLayoutProps = Readonly<{ children: ReactNode }>;
 
 export default function RootLayout({ children }: RootLayoutProps) {
-  return <html lang="ru" data-scroll-behavior="smooth" data-theme="light"><body><ThemePreferenceProvider><AccountAuthProvider><SiteHeader /><div className="pt-[73px]">{children}</div></AccountAuthProvider></ThemePreferenceProvider><script dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} type="application/ld+json" /></body></html>;
+  return (
+    <html lang="ru" data-scroll-behavior="smooth" data-theme="light" suppressHydrationWarning>
+      <body>
+        <Script id="arhdesign-guest-theme" strategy="beforeInteractive">
+          {'try { if (localStorage.getItem("arhdesign:theme") === "dark") document.documentElement.dataset.theme = "dark" } catch {}'}
+        </Script>
+        <ThemePreferenceProvider>
+          <AccountAuthProvider>
+            <SiteHeader />
+            <div className="pt-[73px]">{children}</div>
+          </AccountAuthProvider>
+        </ThemePreferenceProvider>
+        <script dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} type="application/ld+json" />
+      </body>
+    </html>
+  );
 }

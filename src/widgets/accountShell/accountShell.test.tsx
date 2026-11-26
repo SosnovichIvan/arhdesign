@@ -22,6 +22,7 @@ vi.mock("next/link", () => ({ default: ({ children, href, ...props }: React.Anch
 vi.mock("next/image", () => ({ default: ({ alt, ...props }: ImgHTMLAttributes<HTMLImageElement>) => createElement("img", { ...props, alt: alt ?? "" }) }));
 vi.mock("@/features/themeToggle", () => ({ ThemeToggle: () => <button type="button">Тема</button> }));
 vi.mock("@/features/accountNotifications", () => ({ AccountNotificationCenter: () => <button aria-label="Уведомления" type="button" /> }));
+vi.mock("@/features/releaseNotes/releaseNotesDrawer", () => ({ ReleaseNotesDrawer: () => <button aria-label="Что нового" type="button" /> }));
 vi.mock("@/features/accountProjects/api/projects", () => ({
 	loadCurrentAccount,
 	ProjectApiError: ProjectApiErrorMock,
@@ -87,7 +88,7 @@ describe("AccountShell", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: "project-1", name: "Дом в Миллениум Парк" }), { headers: { "Content-Type": "application/json" }, status: 200 })));
     render(<AccountShell><span>Сводка проекта</span></AccountShell>);
     expect(await screen.findByText("Сводка проекта")).toBeTruthy();
-    expect(screen.queryByText("Дом в Миллениум Парк")).toBeNull();
+    expect(screen.getByText("Дом в Миллениум Парк")).toBeTruthy();
     expect(screen.queryByText("ПРОЕКТ")).toBeNull();
     expect(screen.getByRole("navigation", { name: "Разделы проекта" }).textContent).toContain("Финансы проекта");
     expect(screen.getByRole("navigation", { name: "Разделы проекта" }).className).toContain("grid-cols-2");

@@ -1,11 +1,11 @@
 "use client";
 
+import { useNarrowWorkspace } from "@/shared/lib/useNarrowWorkspace";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Dialog } from "@/shared/ui/dialog";
-import { IconButton } from "@/shared/ui/iconButton";
 import { Select } from "@/shared/ui/select";
 
 import { loadProject, loadProjectCalendar } from "../api/projects";
@@ -21,7 +21,9 @@ export function ProjectCalendarPage({ projectId }: Readonly<{ projectId: string 
   const [project, setProject] = useState<ProjectView | null>(null);
   const [items, setItems] = useState<ProjectUpcomingItem[]>([]);
   const [view, setView] = useState<CalendarView>("month");
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("calendar");
+  const narrow = useNarrowWorkspace();
+  const [preferredDisplayMode, setDisplayMode] = useState<DisplayMode | null>(null);
+  const displayMode = preferredDisplayMode ?? (narrow ? "list" : "calendar");
   const [filter, setFilter] = useState<EventFilter>("all");
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [selected, setSelected] = useState<ProjectUpcomingItem | null>(null);
@@ -48,17 +50,21 @@ export function ProjectCalendarPage({ projectId }: Readonly<{ projectId: string 
   const visibleItems = useMemo(() => items.filter((item) => filter === "all" || item.kind === filter), [filter, items]);
   const periodLabel = formatMonthYear(anchor);
 
-  return <section aria-label="Календарь проекта" data-cy="project-calendar-page">
+  return <section aria-labelledby="project-calendar-title" data-cy="project-calendar-page">
     <nav aria-label="Хлебные крошки" className="flex flex-wrap items-center gap-2 text-xs text-secondary"><Link className="hover:text-primary" href="/account">Проекты</Link><span aria-hidden="true">/</span><Link className="truncate hover:text-primary" href={`/account/projects/${encodeURIComponent(projectId)}`}>{project?.name ?? "Проект"}</Link><span aria-hidden="true">/</span><span aria-current="page">Календарь</span></nav>
-    <div aria-label="Период календаря" className="mt-7 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-full border border-border p-1">{([['month', 'Месяц'], ['week', 'Неделя']] as const).map(([value, label]) => <button aria-pressed={view === value} className="min-h-9 shrink-0 rounded-full px-4 text-xs font-semibold text-secondary aria-pressed:bg-action aria-pressed:text-inverse-text" data-cy={`calendar-view-${value}`} key={value} onClick={() => setView(value)} type="button">{label}</button>)}<button aria-label={`Выбор месяца и года: ${periodLabel}`} className="flex min-h-9 shrink-0 items-center gap-2 rounded-full border-l border-border px-4 text-xs font-semibold capitalize text-secondary hover:text-primary" data-cy="calendar-period-picker" onClick={() => setPeriodOpen(true)} type="button"><CalendarIcon />{periodLabel}</button></div>
+    <h1 className="mt-5 font-display text-3xl tablet:text-5xl" id="project-calendar-title">Календарь проекта</h1>
+    <div aria-label="Период календаря" className="mt-5 flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-border p-1">{([['month', 'Месяц'], ['week', 'Неделя']] as const).map(([value, label]) => <button aria-pressed={view === value} className="min-h-9 shrink-0 rounded-full px-4 text-xs font-semibold text-secondary aria-pressed:bg-action aria-pressed:text-inverse-text" data-cy={`calendar-view-${value}`} key={value} onClick={() => setView(value)} type="button">{label}</button>)}<button aria-label={`Выбор месяца и года: ${periodLabel}`} className="flex min-h-9 shrink-0 items-center gap-2 rounded-full border-l border-border px-4 text-xs font-semibold capitalize text-secondary hover:text-primary" data-cy="calendar-period-picker" onClick={() => setPeriodOpen(true)} type="button"><CalendarIcon />{periodLabel}</button></div>
 
-    <div className="mt-5 flex items-center justify-between gap-3 border border-border bg-surface p-3">
-      <div aria-label="Тип событий" className="flex min-w-0 items-center gap-1 overflow-x-auto">{([['all', 'Все'], ['task', 'Задачи'], ['meeting', 'Встречи']] as const).map(([value, label]) => <button aria-pressed={filter === value} className="min-h-10 shrink-0 border border-border px-4 text-xs font-semibold text-secondary hover:border-action aria-pressed:border-action aria-pressed:bg-action/15 aria-pressed:text-primary" key={value} onClick={() => setFilter(value)} type="button">{label}</button>)}</div>
-      <IconButton aria-label={displayMode === "calendar" ? "Показать события списком" : "Показать события в календаре"} className="size-10 shrink-0 border-icon-button-border bg-icon-button text-icon-button-text hover:border-action hover:bg-icon-button-hover" data-cy="calendar-display-toggle" onClick={() => setDisplayMode((current) => current === "calendar" ? "list" : "calendar")} tooltip={displayMode === "calendar" ? "Показать списком" : "Показать календарём"} tooltipAlign="end">{displayMode === "calendar" ? <ListIcon /> : <GridIcon />}</IconButton>
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border border-border bg-surface p-2">
+      <div aria-label="Тип событий" className="flex min-w-0 flex-wrap items-center gap-1">{([['all', 'Все'], ['task', 'Задачи'], ['meeting', 'Встречи']] as const).map(([value, label]) => <button aria-pressed={filter === value} className="min-h-10 shrink-0 border border-border px-4 text-xs font-semibold text-secondary hover:border-action aria-pressed:border-action aria-pressed:bg-action/15 aria-pressed:text-primary" key={value} onClick={() => setFilter(value)} type="button">{label}</button>)}</div>
+      <div aria-label="Вид календаря" className="flex flex-wrap gap-1">
+        <Button aria-label="Показать события списком" aria-pressed={displayMode === "list"} className="aria-pressed:border-action aria-pressed:bg-action/15" data-cy={displayMode === "calendar" ? "calendar-display-toggle" : undefined} onClick={() => setDisplayMode("list")} type="button" variant="secondary">Список</Button>
+        <Button aria-label="Показать события в календаре" aria-pressed={displayMode === "calendar"} className="aria-pressed:border-action aria-pressed:bg-action/15" data-cy={displayMode === "list" ? "calendar-display-toggle" : undefined} onClick={() => setDisplayMode("calendar")} type="button" variant="secondary">Сетка</Button>
+      </div>
     </div>
 
     {state === "loading" ? <div aria-label="Загрузка календаря" className="mt-5 h-[520px] animate-pulse border border-border bg-surface" role="status" /> : null}
-    {state === "error" ? <div className="mt-5 border border-red-700/40 bg-surface p-5" role="alert"><p className="text-sm text-red-700">{error}</p><Button className="mt-4" onClick={() => setReloadKey((value) => value + 1)} variant="secondary">Повторить</Button></div> : null}
+    {state === "error" ? <div className="mt-5 border border-danger/40 bg-surface p-5" role="alert"><p className="text-sm text-danger">{error}</p><Button className="mt-4" onClick={() => setReloadKey((value) => value + 1)} variant="secondary">Повторить</Button></div> : null}
     {state === "ready" ? displayMode === "list" ? <CalendarList items={visibleItems} onSelect={setSelected} /> : <CalendarGrid anchor={anchor} items={visibleItems} onSelect={setSelected} range={range} view={view} /> : null}
     <Dialog isOpen={periodOpen} label="Выбор месяца и года" onClose={() => setPeriodOpen(false)}><PeriodPicker anchor={anchor} onApply={(value) => { setAnchor(value); setPeriodOpen(false); }} onCancel={() => setPeriodOpen(false)} /></Dialog>
     <Dialog isOpen={selected !== null} label="Событие календаря" onClose={() => setSelected(null)}>{selected ? <EventDetails item={selected} /> : null}</Dialog>
@@ -102,5 +108,3 @@ function formatDateTime(value: string) { return new Intl.DateTimeFormat("ru-RU",
 function formatDay(value: Date) { return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", weekday: "long" }).format(value); }
 function formatMonthYear(value: Date) { return new Intl.DateTimeFormat("ru-RU", { month: "long", year: "numeric" }).format(value); }
 function CalendarIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 20 20"><rect height="13" rx="1" stroke="currentColor" strokeWidth="1.4" width="14" x="3" y="4"/><path d="M3 8h14M7 2.5v3M13 2.5v3" stroke="currentColor" strokeWidth="1.4"/></svg>; }
-function ListIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 20 20"><path d="M7 5h10M7 10h10M7 15h10M3 5h.01M3 10h.01M3 15h.01" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6"/></svg>; }
-function GridIcon() { return <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 20 20"><rect height="12" width="14" x="3" y="4" stroke="currentColor" strokeWidth="1.4"/><path d="M3 8h14M8 4v12M13 4v12" stroke="currentColor" strokeWidth="1.2"/></svg>; }

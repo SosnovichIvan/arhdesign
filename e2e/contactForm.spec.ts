@@ -124,11 +124,16 @@ test("keeps every landing section within the viewport across responsive themes",
     { name: "desktop", width: 1440, height: 900 },
     { name: "tablet", width: 768, height: 1024 },
     { name: "mobile", width: 390, height: 844 },
+    { name: "narrow mobile", width: 320, height: 740 },
   ]) {
     await page.setViewportSize(viewport);
     await page.goto("/");
     for (const dark of [false, true]) {
-      if (dark) await page.getByRole("button", { name: /тёмную тему/i }).click();
+      const theme = dark ? "dark" : "light";
+      if (await page.locator("html").getAttribute("data-theme") !== theme) {
+        await page.getByRole("button", { name: dark ? /тёмную тему/i : /светлую тему/i }).click();
+      }
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
       for (const id of ["projects", "services", "process", "author", "contact"]) {
         await expect(page.locator(`#${id}`)).toBeVisible();
       }

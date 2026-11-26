@@ -17,6 +17,7 @@ import (
 
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/account"
 	accountgenerated "github.com/SosnovichIvan/arhdesign/apps/api/internal/accountapi/generated"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/chatimage"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/globalchat"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/preferences"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/project"
@@ -30,6 +31,7 @@ type AccountEndpoint struct {
 	projects      *project.Service
 	preferences   *preferences.Service
 	globalChats   *globalchat.Service
+	chatImages    *chatimage.Service
 	technical     *technicalsupport.Service
 	publicOrigin  string
 	secureCookies bool
@@ -45,6 +47,10 @@ func (endpoint *AccountEndpoint) ConfigurePreferences(service *preferences.Servi
 
 func (endpoint *AccountEndpoint) ConfigureGlobalChats(service *globalchat.Service) {
 	endpoint.globalChats = service
+}
+
+func (endpoint *AccountEndpoint) ConfigureChatImages(service *chatimage.Service) {
+	endpoint.chatImages = service
 }
 
 func (endpoint *AccountEndpoint) ConfigureTechnicalSupport(service *technicalsupport.Service) {
@@ -223,12 +229,14 @@ func (endpoint *AccountEndpoint) setSessionCookies(w http.ResponseWriter, sessio
 	now := time.Now()
 	http.SetCookie(w, &http.Cookie{Name: endpoint.cookieName("session"), Value: session.AccessToken, Path: "/", HttpOnly: true, Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode, Expires: session.AccessExpiresAt, MaxAge: maxAge(now, session.AccessExpiresAt)})
 	refresh := &http.Cookie{Name: endpoint.cookieName("refresh"), Value: session.RefreshToken, Path: "/api/v1/auth", HttpOnly: true, Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode}
+	csrf := &http.Cookie{Name: endpoint.cookieName("csrf"), Value: session.CSRFToken, Path: "/", Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode}
 	if session.RememberMe {
 		refresh.Expires = session.RefreshExpiresAt
 		refresh.MaxAge = maxAge(now, session.RefreshExpiresAt)
+		csrf.Expires, csrf.MaxAge = refresh.Expires, refresh.MaxAge
 	}
 	http.SetCookie(w, refresh)
-	http.SetCookie(w, &http.Cookie{Name: endpoint.cookieName("csrf"), Value: session.CSRFToken, Path: "/", Secure: endpoint.secureCookies, SameSite: http.SameSiteStrictMode, Expires: session.AccessExpiresAt, MaxAge: maxAge(now, session.AccessExpiresAt)})
+	http.SetCookie(w, csrf)
 }
 
 func (endpoint *AccountEndpoint) clearSessionCookies(w http.ResponseWriter) {

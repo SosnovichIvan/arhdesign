@@ -8,6 +8,7 @@ import { useAccountNavigation } from "@/widgets/accountShell";
 import { Button, Input, Select } from "@/shared/ui";
 
 import { loadProjects, ProjectApiError } from "../api/projects";
+import { projectTypeLabel } from "../model/projectTypes";
 import type { ProjectStatus, ProjectView } from "../model/types";
 
 const statusOptions = [
@@ -73,7 +74,7 @@ export function AccountProjectsPage() {
     const normalizedQuery = query.trim().toLocaleLowerCase("ru");
     return projects.filter((project) => {
       const matchesStatus = status === "all" || project.status === status;
-      const matchesQuery = !normalizedQuery || [project.name, project.type, project.address ?? ""].some((value) => value.toLocaleLowerCase("ru").includes(normalizedQuery));
+      const matchesQuery = !normalizedQuery || [project.name, project.type, projectTypeLabel(project.type), project.address ?? ""].some((value) => value.toLocaleLowerCase("ru").includes(normalizedQuery));
       return matchesStatus && matchesQuery;
     });
   }, [projects, query, status]);
@@ -96,7 +97,7 @@ export function AccountProjectsPage() {
 
       {state === "loading" ? <ProjectSkeleton /> : null}
       {state === "error" ? (
-        <div className="mt-10 border border-red-700/40 bg-surface p-8" role="alert">
+        <div className="mt-10 border border-danger/40 bg-surface p-8" role="alert">
           <h2 className="font-display text-3xl">Проекты не загрузились</h2>
           <p className="mt-3 text-secondary">{error}</p>
           <Button className="mt-6" onClick={() => void refresh()} type="button">Повторить</Button>
@@ -120,8 +121,8 @@ function ProjectCard({ project }: Readonly<{ project: ProjectView }>) {
     <li className="group border border-border bg-surface p-6 transition-transform duration-300 hover:-translate-y-1 hover:shadow-surface">
       <Link className="block focus-visible:outline-offset-4" href={`/account/projects/${project.id}`}>
         <div className="flex items-start justify-between gap-4"><span className="rounded-full border border-border px-3 py-1 text-xs font-medium text-secondary">{statusLabels[project.status]}</span><span aria-hidden="true" className="text-2xl text-action transition-transform group-hover:translate-x-1">→</span></div>
-        <h2 className="mt-8 font-display text-4xl leading-none">{project.name}</h2>
-        <p className="mt-3 text-sm text-secondary">{project.type}{project.address ? ` · ${project.address}` : ""}</p>
+        <h2 className="mt-8 wrap-anywhere font-display text-4xl leading-none">{project.name}</h2>
+        <p className="mt-3 text-sm text-secondary">{projectTypeLabel(project.type)}{project.address ? ` · ${project.address}` : ""}</p>
         <dl className="mt-8 grid grid-cols-2 gap-4 border-t border-border pt-5 text-sm">
           <div><dt className="text-secondary">Срок проекта</dt><dd className="mt-1 font-medium">{formatRange(project.plannedStartOn, project.plannedFinishOn)}</dd></div>
           <div><dt className="text-secondary">Заказчик</dt><dd className="mt-1 font-medium">{project.customerUserId ? "Назначен" : "Не назначен"}</dd></div>

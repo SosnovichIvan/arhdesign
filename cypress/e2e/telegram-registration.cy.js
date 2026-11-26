@@ -170,8 +170,8 @@ describe("Регистрация и подтверждение через Telegr
   });
 
   it("повторно отправляет письмо после защитной паузы", () => {
-    cy.clock();
     register();
+    cy.clock();
     cy.intercept("POST", "/api/v1/auth/verification-channel", {
       statusCode: 202,
       body: { status: "accepted", channel: "email" },

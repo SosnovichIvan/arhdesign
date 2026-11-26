@@ -52,7 +52,7 @@ export const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(fu
           {isVisible ? <EyeOffIcon /> : <EyeIcon />}
         </button>
       </div>
-      {error ? <p className="text-xs font-normal leading-5 text-red-700" id={detailsId}>{error}</p> : description ? <p className="text-xs font-normal leading-5 text-secondary" id={detailsId}>{description}</p> : null}
+      {error ? <p className="text-xs font-normal leading-5 text-danger" id={detailsId}>{error}</p> : description ? <p className="text-xs font-normal leading-5 text-secondary" id={detailsId}>{description}</p> : null}
     </div>
   );
 });

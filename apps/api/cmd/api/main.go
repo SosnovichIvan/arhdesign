@@ -13,6 +13,7 @@ import (
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/account"
 	accountgenerated "github.com/SosnovichIvan/arhdesign/apps/api/internal/accountapi/generated"
 	generated "github.com/SosnovichIvan/arhdesign/apps/api/internal/api/generated"
+	"github.com/SosnovichIvan/arhdesign/apps/api/internal/chatimage"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/config"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/globalchat"
 	"github.com/SosnovichIvan/arhdesign/apps/api/internal/handler"
@@ -113,6 +114,7 @@ func main() {
 			os.Exit(1)
 		}
 		accountEndpoint.ConfigureGlobalChats(globalChatService)
+		accountEndpoint.ConfigureChatImages(chatimage.NewService(retentionStore))
 		technicalService, err = technicalsupport.NewService(retentionStore, cipher, []byte(configuration.AccountTokenHMACSecret), configuration.AccountTokenHMACKeyVersion, time.Now)
 		if err != nil {
 			slog.Error("technical support service initialization failed", "error", err)

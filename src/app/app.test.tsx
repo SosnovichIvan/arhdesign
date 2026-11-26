@@ -212,3 +212,29 @@ describe("public portfolio UI", () => {
     expect(screen.getByText("01 / 19")).toBeTruthy();
   });
 });
+
+it("respects reduced motion and lets visitors pause the gallery", () => {
+  vi.useFakeTimers();
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  const first = render(<ProjectCarousel images={projects[0].images.slice(0, 3)} title="Кадры" />);
+  act(() => vi.advanceTimersByTime(10_000));
+  expect(screen.getByText("01 / 03")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Пауза" })).toBeNull();
+  first.unmount();
+
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  render(<ProjectCarousel images={projects[0].images.slice(0, 3)} title="Кадры" />);
+  fireEvent.click(screen.getByRole("button", { name: "Пауза" }));
+  act(() => vi.advanceTimersByTime(10_000));
+  expect(screen.getByText("01 / 03")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Продолжить показ" }));
+  act(() => vi.advanceTimersByTime(5_000));
+  expect(screen.getByText("02 / 03")).toBeTruthy();
+  const thumbnail = screen.getByRole("button", { name: "Показать кадр 2" });
+  expect(thumbnail.tabIndex).toBe(0);
+  act(() => thumbnail.focus());
+  fireEvent.keyDown(thumbnail, { key: "ArrowRight" });
+  expect(screen.getByRole("button", { name: "Показать кадр 3" })).toBe(document.activeElement);
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});

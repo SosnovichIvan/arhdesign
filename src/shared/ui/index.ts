@@ -9,4 +9,5 @@ export { Input } from "./input";
 export { PasswordInput } from "./passwordInput";
 export { Select, type SelectOption } from "./select";
 export { Textarea } from "./textarea";
+export { Tooltip } from "./tooltip";
 export { Typography } from "./typography";

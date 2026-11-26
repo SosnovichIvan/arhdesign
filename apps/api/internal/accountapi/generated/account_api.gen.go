@@ -45,6 +45,13 @@ const (
 	ChannelHandoffStatusAccepted ChannelHandoffStatus = "accepted"
 )
 
+// Defines values for ChatImageMediaType.
+const (
+	Imagegif  ChatImageMediaType = "image/gif"
+	Imagejpeg ChatImageMediaType = "image/jpeg"
+	Imagepng  ChatImageMediaType = "image/png"
+)
+
 // Defines values for DeliveryChannel.
 const (
 	Email    DeliveryChannel = "email"
@@ -258,6 +265,33 @@ type ChannelHandoff struct {
 
 // ChannelHandoffStatus defines model for ChannelHandoff.Status.
 type ChannelHandoffStatus string
+
+// ChatImage defines model for ChatImage.
+type ChatImage struct {
+	CanDelete bool               `json:"canDelete"`
+	CreatedAt time.Time          `json:"createdAt"`
+	Height    int                `json:"height"`
+	Id        openapi_types.UUID `json:"id"`
+	MediaType ChatImageMediaType `json:"mediaType"`
+	Name      string             `json:"name"`
+	Pinned    bool               `json:"pinned"`
+	SizeBytes int64              `json:"sizeBytes"`
+	Width     int                `json:"width"`
+}
+
+// ChatImageMediaType defines model for ChatImage.MediaType.
+type ChatImageMediaType string
+
+// ChatImagePage defines model for ChatImagePage.
+type ChatImagePage struct {
+	Items      []ChatImage `json:"items"`
+	NextCursor *string     `json:"nextCursor,omitempty"`
+}
+
+// ChatImagePin defines model for ChatImagePin.
+type ChatImagePin struct {
+	Pinned bool `json:"pinned"`
+}
 
 // CreateGlobalChatRequest defines model for CreateGlobalChatRequest.
 type CreateGlobalChatRequest struct {
@@ -854,6 +888,16 @@ type RegisterRequest struct {
 	ProfessionalRoleCode string              `json:"professionalRoleCode"`
 }
 
+// ReleaseNote defines model for ReleaseNote.
+type ReleaseNote struct {
+	Added []string `json:"added"`
+	Fixed []struct {
+		Description string `json:"description"`
+		Source      string `json:"source"`
+	} `json:"fixed"`
+	Version string `json:"version"`
+}
+
 // ResetPasswordRequest defines model for ResetPasswordRequest.
 type ResetPasswordRequest struct {
 	Password             *string `json:"password,omitempty"`
@@ -946,6 +990,12 @@ type Cursor = string
 // IfMatchVersion defines model for IfMatchVersion.
 type IfMatchVersion = string
 
+// ImageChatId defines model for ImageChatId.
+type ImageChatId = openapi_types.UUID
+
+// ImageProjectId defines model for ImageProjectId.
+type ImageProjectId = openapi_types.UUID
+
 // PageSize defines model for PageSize.
 type PageSize = int
 
@@ -1019,6 +1069,44 @@ type ListGlobalCalendarParams struct {
 
 	// ProjectId Optional repeated filter containing only projects visible to the current account.
 	ProjectId *[]openapi_types.UUID `form:"projectId,omitempty" json:"projectId,omitempty"`
+}
+
+// ListChatImagesParams defines parameters for ListChatImages.
+type ListChatImagesParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// ProjectId Required for project conversations, where platform administrators also have access. Omit for personal or group conversations, which require active membership.
+	ProjectId *ImageProjectId `form:"projectId,omitempty" json:"projectId,omitempty"`
+}
+
+// UploadChatImageParams defines parameters for UploadChatImage.
+type UploadChatImageParams struct {
+	// ProjectId Required for project conversations, where platform administrators also have access. Omit for personal or group conversations, which require active membership.
+	ProjectId *ImageProjectId `form:"projectId,omitempty" json:"projectId,omitempty"`
+
+	// XFileName File name or the UTF-8 prefix followed by a percent-encoded UTF-8 file name.
+	XFileName string `json:"X-File-Name"`
+
+	// IdempotencyKey A new UUID for each distinct upload, reused after a failed or uncertain response.
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// DeleteChatImageParams defines parameters for DeleteChatImage.
+type DeleteChatImageParams struct {
+	// ProjectId Required for project conversations, where platform administrators also have access. Omit for personal or group conversations, which require active membership.
+	ProjectId *ImageProjectId `form:"projectId,omitempty" json:"projectId,omitempty"`
+}
+
+// ViewChatImageParams defines parameters for ViewChatImage.
+type ViewChatImageParams struct {
+	// ProjectId Required for project conversations, where platform administrators also have access. Omit for personal or group conversations, which require active membership.
+	ProjectId *ImageProjectId `form:"projectId,omitempty" json:"projectId,omitempty"`
+}
+
+// SetChatImagePinParams defines parameters for SetChatImagePin.
+type SetChatImagePinParams struct {
+	// ProjectId Required for project conversations, where platform administrators also have access. Omit for personal or group conversations, which require active membership.
+	ProjectId *ImageProjectId `form:"projectId,omitempty" json:"projectId,omitempty"`
 }
 
 // SearchGlobalChatCandidatesParams defines parameters for SearchGlobalChatCandidates.
@@ -1159,6 +1247,9 @@ type SelectVerificationChannelJSONRequestBody = VerificationChannelRequest
 // VerifyEmailJSONRequestBody defines body for VerifyEmail for application/json ContentType.
 type VerifyEmailJSONRequestBody = OneTimeTokenRequest
 
+// SetChatImagePinJSONRequestBody defines body for SetChatImagePin for application/json ContentType.
+type SetChatImagePinJSONRequestBody = ChatImagePin
+
 // CreateGlobalChatJSONRequestBody defines body for CreateGlobalChat for application/json ContentType.
 type CreateGlobalChatJSONRequestBody = CreateGlobalChatRequest
 
@@ -1272,6 +1363,21 @@ type ServerInterface interface {
 	// List visible projects, tasks, and meetings for the global calendar
 	// (GET /v1/calendar)
 	ListGlobalCalendar(w http.ResponseWriter, r *http.Request, params ListGlobalCalendarParams)
+	// List images from an accessible conversation
+	// (GET /v1/chat-images/{chatId})
+	ListChatImages(w http.ResponseWriter, r *http.Request, chatId ImageChatId, params ListChatImagesParams)
+	// Attach one JPEG, PNG or GIF image up to 10 MiB
+	// (POST /v1/chat-images/{chatId})
+	UploadChatImage(w http.ResponseWriter, r *http.Request, chatId ImageChatId, params UploadChatImageParams)
+	// Remove an image as its uploader or an authorized chat manager
+	// (DELETE /v1/chat-images/{chatId}/{imageId})
+	DeleteChatImage(w http.ResponseWriter, r *http.Request, chatId ImageChatId, imageId openapi_types.UUID, params DeleteChatImageParams)
+	// View one image from an accessible conversation
+	// (GET /v1/chat-images/{chatId}/{imageId})
+	ViewChatImage(w http.ResponseWriter, r *http.Request, chatId ImageChatId, imageId openapi_types.UUID, params ViewChatImageParams)
+	// Pin or unpin an image in an accessible conversation
+	// (PUT /v1/chat-images/{chatId}/{imageId})
+	SetChatImagePin(w http.ResponseWriter, r *http.Request, chatId ImageChatId, imageId openapi_types.UUID, params SetChatImagePinParams)
 	// Find active accounts by login or email for chat creation
 	// (GET /v1/chat-user-candidates)
 	SearchGlobalChatCandidates(w http.ResponseWriter, r *http.Request, params SearchGlobalChatCandidatesParams)
@@ -1428,6 +1534,9 @@ type ServerInterface interface {
 	// List upcoming tasks and meetings visible in one project
 	// (GET /v1/projects/{projectId}/upcoming)
 	ListProjectUpcomingItems(w http.ResponseWriter, r *http.Request, projectId ProjectId, params ListProjectUpcomingItemsParams)
+	// List release notes for signed-in users, newest first
+	// (GET /v1/release-notes)
+	ListReleaseNotes(w http.ResponseWriter, r *http.Request)
 	// Get interface settings of the current account
 	// (GET /v1/settings)
 	GetUserSettings(w http.ResponseWriter, r *http.Request)
@@ -1830,6 +1939,305 @@ func (siw *ServerInterfaceWrapper) ListGlobalCalendar(w http.ResponseWriter, r *
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListGlobalCalendar(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListChatImages operation middleware
+func (siw *ServerInterfaceWrapper) ListChatImages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "chatId" -------------
+	var chatId ImageChatId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "chatId", r.PathValue("chatId"), &chatId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "chatId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListChatImagesParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "cursor", r.URL.Query(), &params.Cursor)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "projectId" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectId", r.URL.Query(), &params.ProjectId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListChatImages(w, r, chatId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UploadChatImage operation middleware
+func (siw *ServerInterfaceWrapper) UploadChatImage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "chatId" -------------
+	var chatId ImageChatId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "chatId", r.PathValue("chatId"), &chatId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "chatId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	ctx = context.WithValue(ctx, CsrfHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UploadChatImageParams
+
+	// ------------- Optional query parameter "projectId" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectId", r.URL.Query(), &params.ProjectId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Required header parameter "X-File-Name" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-File-Name")]; found {
+		var XFileName string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-File-Name", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-File-Name", valueList[0], &XFileName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-File-Name", Err: err})
+			return
+		}
+
+		params.XFileName = XFileName
+
+	} else {
+		err := fmt.Errorf("Header parameter X-File-Name is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "X-File-Name", Err: err})
+		return
+	}
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		err := fmt.Errorf("Header parameter Idempotency-Key is required, but not found")
+		siw.ErrorHandlerFunc(w, r, &RequiredHeaderError{ParamName: "Idempotency-Key", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadChatImage(w, r, chatId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteChatImage operation middleware
+func (siw *ServerInterfaceWrapper) DeleteChatImage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "chatId" -------------
+	var chatId ImageChatId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "chatId", r.PathValue("chatId"), &chatId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "chatId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "imageId" -------------
+	var imageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "imageId", r.PathValue("imageId"), &imageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "imageId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	ctx = context.WithValue(ctx, CsrfHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteChatImageParams
+
+	// ------------- Optional query parameter "projectId" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectId", r.URL.Query(), &params.ProjectId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteChatImage(w, r, chatId, imageId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ViewChatImage operation middleware
+func (siw *ServerInterfaceWrapper) ViewChatImage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "chatId" -------------
+	var chatId ImageChatId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "chatId", r.PathValue("chatId"), &chatId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "chatId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "imageId" -------------
+	var imageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "imageId", r.PathValue("imageId"), &imageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "imageId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ViewChatImageParams
+
+	// ------------- Optional query parameter "projectId" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectId", r.URL.Query(), &params.ProjectId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ViewChatImage(w, r, chatId, imageId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetChatImagePin operation middleware
+func (siw *ServerInterfaceWrapper) SetChatImagePin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "chatId" -------------
+	var chatId ImageChatId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "chatId", r.PathValue("chatId"), &chatId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "chatId", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "imageId" -------------
+	var imageId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "imageId", r.PathValue("imageId"), &imageId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "imageId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	ctx = context.WithValue(ctx, CsrfHeaderScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetChatImagePinParams
+
+	// ------------- Optional query parameter "projectId" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "projectId", r.URL.Query(), &params.ProjectId)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "projectId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetChatImagePin(w, r, chatId, imageId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4009,6 +4417,26 @@ func (siw *ServerInterfaceWrapper) ListProjectUpcomingItems(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
+// ListReleaseNotes operation middleware
+func (siw *ServerInterfaceWrapper) ListReleaseNotes(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, AccountSessionScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListReleaseNotes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetUserSettings operation middleware
 func (siw *ServerInterfaceWrapper) GetUserSettings(w http.ResponseWriter, r *http.Request) {
 
@@ -4228,6 +4656,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/v1/auth/verification-channel", wrapper.SelectVerificationChannel)
 	m.HandleFunc("POST "+options.BaseURL+"/v1/auth/verify-email", wrapper.VerifyEmail)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/calendar", wrapper.ListGlobalCalendar)
+	m.HandleFunc("GET "+options.BaseURL+"/v1/chat-images/{chatId}", wrapper.ListChatImages)
+	m.HandleFunc("POST "+options.BaseURL+"/v1/chat-images/{chatId}", wrapper.UploadChatImage)
+	m.HandleFunc("DELETE "+options.BaseURL+"/v1/chat-images/{chatId}/{imageId}", wrapper.DeleteChatImage)
+	m.HandleFunc("GET "+options.BaseURL+"/v1/chat-images/{chatId}/{imageId}", wrapper.ViewChatImage)
+	m.HandleFunc("PUT "+options.BaseURL+"/v1/chat-images/{chatId}/{imageId}", wrapper.SetChatImagePin)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/chat-user-candidates", wrapper.SearchGlobalChatCandidates)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/chats", wrapper.ListGlobalChats)
 	m.HandleFunc("POST "+options.BaseURL+"/v1/chats", wrapper.CreateGlobalChat)
@@ -4280,6 +4713,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("POST "+options.BaseURL+"/v1/projects/{projectId}/tasks", wrapper.CreateProjectTask)
 	m.HandleFunc("PATCH "+options.BaseURL+"/v1/projects/{projectId}/tasks/{taskId}", wrapper.UpdateProjectTask)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/projects/{projectId}/upcoming", wrapper.ListProjectUpcomingItems)
+	m.HandleFunc("GET "+options.BaseURL+"/v1/release-notes", wrapper.ListReleaseNotes)
 	m.HandleFunc("GET "+options.BaseURL+"/v1/settings", wrapper.GetUserSettings)
 	m.HandleFunc("PUT "+options.BaseURL+"/v1/settings", wrapper.UpdateUserSettings)
 	m.HandleFunc("POST "+options.BaseURL+"/v1/technical/feedback", wrapper.CreateTechnicalFeedback)
