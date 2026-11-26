@@ -15,7 +15,6 @@ output-options:
     - resetPassword
     - getCurrentAccount
     - listReleaseNotes
-    - markReleaseNoteRead
     - getUserSettings
     - updateUserSettings
     - listGlobalChats

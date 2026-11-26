@@ -40,7 +40,8 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
   const [activeProject, setActiveProject] = useState<{ id: string; name: string } | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 	const [isGlobalAdministrator, setIsGlobalAdministrator] = useState(false);
-	const [accountAuthorized, setAccountAuthorized] = useState(false);
+	const [accountId, setAccountId] = useState<string | null>(null);
+	const accountAuthorized = accountId !== null;
 	const [authorizedPath, setAuthorizedPath] = useState("");
 	const projectRoute = getProjectWorkspaceRoute(pathname);
 	const projectId = projectRoute?.projectId ?? null;
@@ -52,11 +53,11 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
 			void loadCurrentAccount(controller.signal).then((account) => {
 				setIsGlobalAdministrator(account.globalRole === "super_admin" || account.globalRole === "technical_admin");
 				setProfileInitial((account.firstName || account.login || "").trim().slice(0, 1).toLocaleUpperCase("ru-RU"));
-				setAccountAuthorized(true);
+				setAccountId(account.id);
 			}).catch((reason: unknown) => {
 				if (reason instanceof DOMException && reason.name === "AbortError") return;
 				if (reason instanceof ProjectApiError && reason.status === 401) {
-					setAccountAuthorized(false);
+					setAccountId(null);
 					router.replace("/?auth=login");
 				}
 			});
@@ -128,7 +129,7 @@ export function AccountShell({ children }: Readonly<{ children: ReactNode }>) {
             <div className="hidden tablet:block"><ThemeToggle /></div>
             {isAuthorized ? <TechnicalSupportWidget /> : null}
             <AccountNotificationCenter />
-            {accountAuthorized ? <ReleaseNotesDrawer /> : null}
+            {accountId ? <ReleaseNotesDrawer accountId={accountId} key={accountId} /> : null}
             <button aria-label="Выйти из личного кабинета" className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-sm hover:bg-surface tablet:hidden" disabled={isLoggingOut} onClick={() => void logout()} type="button"><ExitIcon /> Выйти</button>
             <Link aria-label="Настройки профиля" className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-action font-display text-lg text-inverse-text" href="/account/profile">{profileInitial || <UsersIcon />}</Link>
           </header>

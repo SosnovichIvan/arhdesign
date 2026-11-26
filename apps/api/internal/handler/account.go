@@ -32,7 +32,6 @@ type AccountEndpoint struct {
 	preferences   *preferences.Service
 	globalChats   *globalchat.Service
 	chatImages    *chatimage.Service
-	releaseNotes  releaseNoteReadStore
 	technical     *technicalsupport.Service
 	publicOrigin  string
 	secureCookies bool

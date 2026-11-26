@@ -1,60 +1,87 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { getWithAccountSession } from "@/shared/lib/accountSession";
-import { cn, csrfToken } from "@/shared/lib";
+import { cn } from "@/shared/lib";
 import { Button, Dialog, IconButton } from "@/shared/ui";
 
 type ReleaseNote = {
   version: string;
-  read: boolean;
   added: string[];
   fixed: { description: string; source: string }[];
 };
 
-export function ReleaseNotesDrawer() {
+function rememberOpening(key: string, revision: string) {
+  try { localStorage.setItem(key, revision); } catch { /* Storage may be disabled. */ }
+}
+
+export function ReleaseNotesDrawer({ accountId }: Readonly<{ accountId: string }>) {
   const [open, setOpen] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const [notes, setNotes] = useState<ReleaseNote[] | null>(null);
+  const [catalog, setCatalog] = useState<{ notes: ReleaseNote[]; revision: string | null } | null>(null);
+  const [seenRevision, setSeenRevision] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
-  const [marking, setMarking] = useState<string | null>(null);
-  const [markError, setMarkError] = useState(false);
-  const unread = notes?.some((note) => !note.read);
+  const isOpen = useRef(false);
+  const storageKey = `arhdesign:release-notes:seen:${accountId}`;
+  const revision = catalog?.revision;
+  const unread = Boolean(revision && revision !== seenRevision);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void getWithAccountSession("/api/v1/release-notes", controller.signal).then(async (response) => {
-      if (!response.ok) throw new Error("Не удалось загрузить обновления");
-      const data: unknown = await response.json();
-      if (!Array.isArray(data)) throw new Error("Не удалось загрузить обновления");
-      if (!controller.signal.aborted) setNotes(data);
-    }).catch(() => {
-      if (!controller.signal.aborted) setFailed(true);
-    });
-    return () => controller.abort();
-  }, [attempt]);
+    let request: AbortController | undefined;
+    function loadNotes() {
+      request?.abort();
+      const controller = new AbortController();
+      request = controller;
+      void getWithAccountSession("/api/v1/release-notes", controller.signal).then(async (response) => {
+        if (!response.ok) throw new Error("Не удалось загрузить обновления");
+        const notes: unknown = await response.json();
+        if (!Array.isArray(notes)) throw new Error("Не удалось загрузить обновления");
+        if (controller.signal.aborted) return;
+        const nextRevision = notes.length ? response.headers.get("X-Release-Notes-Revision") : null;
+        if (isOpen.current && nextRevision) {
+          rememberOpening(storageKey, nextRevision);
+          setSeenRevision(nextRevision);
+        } else {
+          try {
+            const stored = localStorage.getItem(storageKey);
+            if (stored !== null && stored !== nextRevision) localStorage.removeItem(storageKey);
+            setSeenRevision(stored === nextRevision ? stored : null);
+          } catch { /* Keep the in-memory state if storage is disabled. */ }
+        }
+        setCatalog({ notes, revision: nextRevision });
+        setFailed(false);
+      }).catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    }
+
+    function onStorage(event: StorageEvent) {
+      if (event.key === storageKey) setSeenRevision(event.newValue);
+    }
+
+    loadNotes();
+    window.addEventListener("focus", loadNotes);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      request?.abort();
+      window.removeEventListener("focus", loadNotes);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [attempt, storageKey]);
 
   function openDrawer() {
+    isOpen.current = true;
     setOpen(true);
+    if (revision) {
+      rememberOpening(storageKey, revision);
+      setSeenRevision(revision);
+    }
   }
 
-  async function markRead(version: string) {
-    setMarking(version);
-    setMarkError(false);
-    try {
-      const response = await fetch(`/api/v1/release-notes/${encodeURIComponent(version)}/read`, {
-        credentials: "same-origin",
-        headers: { "X-CSRF-Token": csrfToken() },
-        method: "PUT",
-      });
-      if (!response.ok) throw new Error("Не удалось сохранить отметку");
-      setNotes((current) => current?.map((note) => note.version === version ? { ...note, read: true } : note) ?? null);
-    } catch {
-      setMarkError(true);
-    } finally {
-      setMarking(null);
-    }
+  function closeDrawer() {
+    isOpen.current = false;
+    setOpen(false);
   }
 
   function retry() {
@@ -72,18 +99,16 @@ export function ReleaseNotesDrawer() {
       </span>
       <span className="hidden desktop:inline">Что нового</span>
     </IconButton>
-    <Dialog closeLabel="Закрыть список обновлений" contentClassName="tablet:px-8" isOpen={open} label="Что нового" onClose={() => setOpen(false)} placement="right">
+    <Dialog closeLabel="Закрыть список обновлений" contentClassName="tablet:px-8" isOpen={open} label="Что нового" onClose={closeDrawer} placement="right">
       <h2 className="font-display text-4xl text-primary">Что нового</h2>
-      {failed ? <div className="mt-6 space-y-3" role="alert"><p>Не удалось загрузить обновления.</p><Button onClick={retry} variant="secondary">Повторить</Button></div> : notes === null ? <p className="mt-6 text-secondary" role="status">Загружаем обновления…</p> : null}
-      {notes?.map(({ added, fixed, read, version }) => <article className="mt-6 border-t border-border py-5" key={version}>
+      {failed ? <div className="mt-6 space-y-3" role="alert"><p>Не удалось загрузить обновления.</p><Button onClick={retry} variant="secondary">Повторить</Button></div> : catalog === null ? <p className="mt-6 text-secondary" role="status">Загружаем обновления…</p> : null}
+      {catalog?.notes.map(({ added, fixed, version }) => <article className="mt-6 border-t border-border py-5" key={version}>
         <h3 className="text-lg font-semibold text-primary">Версия {version}</h3>
         <h4 className="mt-5 text-sm font-semibold text-primary">Добавили</h4>
         <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed text-secondary">{added.map((item) => <li key={item}>{item}</li>)}</ul>
         <h4 className="mt-5 text-sm font-semibold text-primary">Исправили</h4>
         <ul className="mt-2 list-disc space-y-3 pl-5 text-sm leading-relaxed text-secondary">{fixed.map(({ description, source }) => <li key={description}>{description}<span className="mt-1 block text-xs">Источник — {source}</span></li>)}</ul>
-        <Button className="mt-5" disabled={read || marking !== null} onClick={() => void markRead(version)} variant="secondary">{read ? "Прочитано" : "Отметить прочитанным"}</Button>
       </article>)}
-      {markError ? <p className="mt-4 text-sm text-danger" role="alert">Не удалось сохранить отметку. Повторите попытку.</p> : null}
     </Dialog>
   </>;
 }

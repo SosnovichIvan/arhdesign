@@ -336,7 +336,11 @@ paths:
       security: [{ accountSession: [] }]
       responses:
         '200':
-          description: Release notes with new features, attributed fixes and per-account read state.
+          description: Release notes with new features and attributed fixes.
+          headers:
+            X-Release-Notes-Revision:
+              description: Changes whenever the authenticated release notes change.
+              schema: { type: string }
           content:
             application/json:
               schema:
@@ -344,26 +348,6 @@ paths:
                 items: { $ref: '#/components/schemas/ReleaseNote' }
         '401':
           $ref: '#/components/responses/Unauthenticated'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /v1/release-notes/{version}/read:
-    put:
-      tags: [Release notes]
-      operationId: markReleaseNoteRead
-      summary: Mark a release as read for the signed-in account
-      security: [{ accountSession: [], csrfHeader: [] }]
-      parameters:
-        - name: version
-          in: path
-          required: true
-          schema: { type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$' }
-      responses:
-        '204': { description: The version is marked as read. }
-        '401': { $ref: '#/components/responses/Unauthenticated' }
-        '403': { $ref: '#/components/responses/CsrfRejected' }
-        '404': { $ref: '#/components/responses/ResourceHidden' }
-        '500': { $ref: '#/components/responses/InternalError' }
 
   /v1/settings:
     get:
@@ -2192,10 +2176,9 @@ components:
   schemas:
     ReleaseNote:
       type: object
-      required: [version, added, fixed, read]
+      required: [version, added, fixed]
       properties:
         version: { type: string, example: '1.0.19' }
-        read: { type: boolean }
         added:
           type: array
           items: { type: string }

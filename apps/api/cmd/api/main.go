@@ -115,7 +115,6 @@ func main() {
 		}
 		accountEndpoint.ConfigureGlobalChats(globalChatService)
 		accountEndpoint.ConfigureChatImages(chatimage.NewService(retentionStore))
-		accountEndpoint.ConfigureReleaseNoteReads(retentionStore)
 		technicalService, err = technicalsupport.NewService(retentionStore, cipher, []byte(configuration.AccountTokenHMACSecret), configuration.AccountTokenHMACKeyVersion, time.Now)
 		if err != nil {
 			slog.Error("technical support service initialization failed", "error", err)
