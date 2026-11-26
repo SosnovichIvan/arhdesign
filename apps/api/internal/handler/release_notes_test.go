@@ -26,7 +26,7 @@ func TestReleaseNotesRequireAnAuthenticatedAccount(t *testing.T) {
 	response = httptest.NewRecorder()
 	mux.ServeHTTP(response, request)
 	var notes []accountgenerated.ReleaseNote
-	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "private, no-store" || json.Unmarshal(response.Body.Bytes(), &notes) != nil {
+	if response.Code != http.StatusOK || response.Header().Get("Cache-Control") != "private, no-store" || len(response.Header().Get("X-Release-Notes-Revision")) != 64 || json.Unmarshal(response.Body.Bytes(), &notes) != nil {
 		t.Fatalf("release notes response status = %d", response.Code)
 	}
 	if len(notes) == 0 || notes[0].Version != "1.0.19" || len(notes[0].Added) == 0 || len(notes[0].Fixed) < 2 || notes[0].Fixed[0].Source != "Артемий (@Artemy)" || notes[0].Fixed[1].Source != "Артемий (@Artemy)" {

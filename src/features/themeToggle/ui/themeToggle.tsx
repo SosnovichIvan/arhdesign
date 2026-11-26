@@ -2,8 +2,9 @@
 import { IconButton } from "@/shared/ui";
 import { useThemePreference } from "../model/themePreferenceProvider";
 
-export function ThemeToggle() {
+export function ThemeToggle({ showTooltip = false }: Readonly<{ showTooltip?: boolean }>) {
   const { isPending, setTheme, theme } = useThemePreference();
   const dark = theme === "dark";
-  return <IconButton aria-label={dark ? "Включить светлую тему" : "Включить тёмную тему"} disabled={isPending} onClick={() => void setTheme(dark ? "light" : "dark").catch(() => undefined)}>{dark ? "☀" : "◐"}</IconButton>;
+  const label = dark ? "Включить светлую тему" : "Включить тёмную тему";
+  return <IconButton aria-label={label} disabled={isPending} onClick={() => void setTheme(dark ? "light" : "dark").catch(() => undefined)} tooltip={showTooltip ? label : undefined} tooltipAlign="end" tooltipPlacement="bottom">{dark ? "☀" : "◐"}</IconButton>;
 }

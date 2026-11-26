@@ -36,6 +36,11 @@
   }
 }
 
+@keyframes release-bell-pulse {
+  0%, 65%, 100% { transform: scale(1); }
+  25% { transform: scale(1.18); }
+}
+
 :root[data-theme="dark"] {
   --color-bg-page: #111310;
   --color-bg-surface: #1e211f;

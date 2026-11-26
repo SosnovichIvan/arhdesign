@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IconButton } from "@/shared/ui";
 
 import { loadAccountNotifications, markAccountNotificationRead, markAllAccountNotificationsRead } from "../api/notifications";
 import type { AccountNotificationList } from "../model/types";
@@ -44,7 +45,7 @@ export function AccountNotificationCenter() {
   }
 
   return <div className="relative">
-    <button aria-expanded={open} aria-haspopup="dialog" aria-label={data.unreadCount > 0 ? `Уведомления, непрочитанных: ${data.unreadCount}` : "Уведомления"} className="relative inline-flex size-11 items-center justify-center rounded-full border border-border hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action" onClick={() => setOpen((value) => !value)} type="button"><BellIcon />{data.unreadCount > 0 ? <span aria-hidden="true" className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-action px-1 text-[10px] font-semibold leading-5 text-inverse-text">{data.unreadCount > 99 ? "99+" : data.unreadCount}</span> : null}</button>
+    <IconButton aria-expanded={open} aria-haspopup="dialog" aria-label={data.unreadCount > 0 ? `Уведомления, непрочитанных: ${data.unreadCount}` : "Уведомления"} className="relative focus-visible:outline-action" onClick={() => setOpen((value) => !value)} tooltip="Уведомления" tooltipPlacement="bottom"><BellIcon />{data.unreadCount > 0 ? <span aria-hidden="true" className="absolute -right-1 -top-1 inline-flex min-w-5 items-center justify-center rounded-full bg-action px-1 text-[10px] font-semibold leading-5 text-inverse-text">{data.unreadCount > 99 ? "99+" : data.unreadCount}</span> : null}</IconButton>
     <span aria-atomic="true" className="sr-only" role="status">{status}</span>
     {open ? <section aria-label="Уведомления" className="absolute right-0 top-[calc(100%+0.75rem)] z-50 w-[min(24rem,calc(100vw-2rem))] border border-border bg-surface shadow-2xl" role="dialog">
       <header className="flex items-center justify-between gap-4 border-b border-border px-4 py-3"><h2 className="text-sm font-semibold">Уведомления</h2>{data.unreadCount > 0 ? <button className="min-h-11 text-xs text-action underline" onClick={() => void readAll()} type="button">Прочитать все</button> : null}</header>

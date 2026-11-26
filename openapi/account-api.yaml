@@ -337,6 +337,10 @@ paths:
       responses:
         '200':
           description: Release notes with new features and attributed fixes.
+          headers:
+            X-Release-Notes-Revision:
+              description: Changes whenever the authenticated release notes change.
+              schema: { type: string }
           content:
             application/json:
               schema:

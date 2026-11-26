@@ -71,7 +71,7 @@ export function Dialog({ children, className, closeButtonClassName, contentClass
         <div className="flex shrink-0 justify-end px-4 pt-3 pb-1 tablet:px-6">
           <IconButton aria-label={closeLabel} className={cn("shrink-0 text-secondary", closeButtonClassName)} onClick={onClose} ref={closeButtonRef}>×</IconButton>
         </div>
-        <div aria-label={placement === "right" ? "Содержимое панели" : undefined} className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 tablet:px-12 tablet:pb-12", contentClassName)} role={placement === "right" ? "region" : undefined} tabIndex={placement === "right" ? 0 : undefined}>
+        <div aria-label={placement === "right" ? "Содержимое панели" : undefined} className={cn("min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-6 tablet:px-12 tablet:pb-12", placement === "right" && "focus-visible:outline-none focus-visible:[box-shadow:inset_3px_0_var(--color-focus)] forced-colors:focus-visible:outline", contentClassName)} role={placement === "right" ? "region" : undefined} tabIndex={placement === "right" ? 0 : undefined}>
           {children}
         </div>
       </section>
